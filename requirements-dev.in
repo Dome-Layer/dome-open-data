@@ -1,0 +1,7 @@
+-r requirements.in
+ruff==0.15.17
+mypy==1.20.2
+pytest~=9.0.3
+pre-commit>=4.0,<5.0
+types-PyYAML
+pyarrow-stubs

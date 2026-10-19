@@ -1,0 +1,110 @@
+# Source registry. One entry per dataset; the schema is enforced by
+# src/dome_open_data/registry.py and documented in TOOL_CONTEXT.md.
+# Quote "yes" / "no" for commercial_ok: YAML 1.1 reads them as booleans.
+
+- id: worldbank_wdi
+  name: World Bank World Development Indicators
+  publisher: worldbank
+  dataset: wdi
+  domain: economy
+  connector: rest
+  dialect: worldbank
+  endpoint: https://api.worldbank.org/v2/
+  cadence: monthly
+  change_signal: catalogue_date
+  rate_limit: { per_second: 2 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 120
+  licence:
+    name: CC BY 4.0
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: World Bank, World Development Indicators."
+  options:
+    source_id: 2
+    start_year: 1960
+    # Curated core set (Sprint OD session 1, scope A). Adding a code here
+    # changes the change token, so the next run collects a new vintage.
+    indicators:
+      # Output and prices
+      - NY.GDP.MKTP.CD
+      - NY.GDP.MKTP.KD
+      - NY.GDP.MKTP.KD.ZG
+      - NY.GDP.PCAP.CD
+      - NY.GDP.PCAP.KD
+      - NY.GDP.PCAP.PP.KD
+      - NY.GDP.MKTP.PP.KD
+      - NY.GNP.PCAP.CD
+      - NY.GNP.PCAP.PP.CD
+      - NY.GDP.DEFL.KD.ZG
+      - FP.CPI.TOTL.ZG
+      - FP.CPI.TOTL
+      # Expenditure and structure
+      - NE.GDI.TOTL.ZS
+      - NE.CON.PRVT.ZS
+      - NE.CON.GOVT.ZS
+      - NV.AGR.TOTL.ZS
+      - NV.IND.TOTL.ZS
+      - NV.IND.MANF.ZS
+      - NV.SRV.TOTL.ZS
+      - NY.GNS.ICTR.ZS
+      # Trade and external
+      - NE.EXP.GNFS.ZS
+      - NE.IMP.GNFS.ZS
+      - NE.TRD.GNFS.ZS
+      - NE.EXP.GNFS.CD
+      - NE.IMP.GNFS.CD
+      - BN.CAB.XOKA.GD.ZS
+      - BX.KLT.DINV.WD.GD.ZS
+      - BX.TRF.PWKR.DT.GD.ZS
+      - TX.VAL.MRCH.CD.WT
+      - TM.VAL.MRCH.CD.WT
+      # Money, rates and public finance
+      - FR.INR.RINR
+      - FR.INR.LEND
+      - PA.NUS.FCRF
+      - PA.NUS.PPP
+      - FM.LBL.BMNY.GD.ZS
+      - FS.AST.PRVT.GD.ZS
+      - FI.RES.TOTL.CD
+      - GC.DOD.TOTL.GD.ZS
+      - GC.REV.XGRT.GD.ZS
+      - GC.XPN.TOTL.GD.ZS
+      - GC.TAX.TOTL.GD.ZS
+      # Labour
+      - SL.UEM.TOTL.ZS
+      - SL.TLF.CACT.ZS
+      - SL.EMP.TOTL.SP.ZS
+      - SL.TLF.TOTL.IN
+      # Population and health
+      - SP.POP.TOTL
+      - SP.POP.GROW
+      - SP.URB.TOTL.IN.ZS
+      - SP.DYN.LE00.IN
+      - SP.DYN.TFRT.IN
+      - SP.DYN.CBRT.IN
+      - SP.DYN.CDRT.IN
+      - SP.POP.65UP.TO.ZS
+      - SP.POP.0014.TO.ZS
+      - SP.DYN.IMRT.IN
+      - SH.DYN.MORT
+      - SH.XPD.CHEX.GD.ZS
+      # Education, poverty, inequality
+      - SE.XPD.TOTL.GD.ZS
+      - SE.PRM.ENRR
+      - SE.TER.ENRR
+      - SE.ADT.LITR.ZS
+      - SI.POV.GINI
+      - SI.POV.DDAY
+      # Energy, environment, land
+      - EG.USE.PCAP.KG.OE
+      - EG.ELC.ACCS.ZS
+      - EG.FEC.RNEW.ZS
+      - EN.GHG.CO2.PC.CE.AR5
+      - AG.LND.FRST.ZS
+      - AG.LND.ARBL.ZS
+      # Connectivity and defence
+      - IT.NET.USER.ZS
+      - IT.CEL.SETS.P2
+      - MS.MIL.XPND.GD.ZS

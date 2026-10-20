@@ -77,8 +77,9 @@ def runs_prefix(source_id: str) -> str:
 
 async def write_run(storage: Storage, run: RunRecord) -> None:
     table = pa.Table.from_pylist([asdict(run)], schema=RUNS_SCHEMA)
-    # Sorts by start time; the suffix keeps two runs that start in the same second apart.
-    name = f"run={run.started_at:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}.parquet"
+    # Key order is write order (microseconds), which last_collected_token relies on; the
+    # suffix keeps two writers apart even within one microsecond.
+    name = f"run={datetime.now(UTC):%Y%m%dT%H%M%S%fZ}-{uuid.uuid4().hex[:8]}.parquet"
     await storage.put_new(f"{runs_prefix(run.source_id)}{name}", parquet_bytes(table))
 
 

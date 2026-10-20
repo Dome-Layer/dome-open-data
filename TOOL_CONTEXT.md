@@ -83,7 +83,7 @@ raw/{publisher}/{dataset}/vintage=YYYY-MM-DD/_manifest.json         change token
 clean/{domain}/{publisher}__{dataset}/vintage=YYYY-MM-DD/part-0.parquet
 catalog/sources/source={id}/part-0.parquet                          registry entry incl. licence (current)
 catalog/series/source={id}/part-0.parquet                           title, definition, unit per series_id (current)
-catalog/runs/source={id}/run=<UTC start>-<suffix>.parquet           one file per run, append only
+catalog/runs/source={id}/run=<UTC write time, us>-<suffix>.parquet    one file per run, append only
 ```
 Raw and clean objects are written with a create-only put (`If-None-Match`), so an existing vintage
 can never be overwritten. **Deviation from the brief:** `catalog/` is partitioned per source

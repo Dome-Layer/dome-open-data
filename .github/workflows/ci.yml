@@ -1,0 +1,57 @@
+# Source of truth: dome-docs/templates/ci-python.yml (adapted for dome-open-data).
+# Root layout (no backend/), no frontend or docker job, no dummy LLM keys: the
+# pipeline has no LLM and ships no image (DOME_DECISIONS 2026-10-19).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify lock files match their inputs
+        # Seeded from the committed lock, no --upgrade: only an uncompiled
+        # requirements.in change or a hand-edited lock produces a diff.
+        # Rationale: dome-docs/decisions/DOME_DECISIONS.md (2026-06-01, DA-007 follow-up).
+        run: |
+          cp requirements.txt /tmp/req.txt
+          uv pip compile requirements.in -o /tmp/req.txt --python-version 3.12
+          tail -n +3 requirements.txt > /tmp/req-local.txt
+          tail -n +3 /tmp/req.txt > /tmp/req-ci.txt
+          diff /tmp/req-local.txt /tmp/req-ci.txt
+          cp requirements-dev.txt /tmp/req-dev.txt
+          uv pip compile requirements-dev.in -o /tmp/req-dev.txt --python-version 3.12
+          tail -n +3 requirements-dev.txt > /tmp/req-dev-local.txt
+          tail -n +3 /tmp/req-dev.txt > /tmp/req-dev-ci.txt
+          diff /tmp/req-dev-local.txt /tmp/req-dev-ci.txt
+      - name: Lint (ruff check)
+        run: ruff check .
+      - name: Format check (ruff format)
+        run: ruff format --check .
+      - name: Type check (mypy)
+        run: mypy .
+      - name: Registry loads
+        run: PYTHONPATH=src python -m dome_open_data list
+      - name: Tests (pytest)
+        run: pytest
+      - name: Security audit (pip-audit)
+        # DA-007: audit exactly the pinned production lock.
+        run: uvx pip-audit --no-deps -r requirements.txt

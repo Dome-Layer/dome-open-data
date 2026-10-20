@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Data never enters this public repo; it lives in the private R2 bucket
+data/
+*.parquet
+*.csv
+*.zip
+*.xlsx
+*.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# macOS / editors
+.DS_Store
+.vscode/
+.cursor/
+.claude/

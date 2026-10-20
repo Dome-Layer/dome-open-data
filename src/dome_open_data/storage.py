@@ -1,5 +1,6 @@
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
@@ -12,20 +13,37 @@ class VintageExistsError(RuntimeError):
     pass
 
 
+# Expected shapes, checked before any request so a value pasted into the wrong variable
+# fails here, without ever being echoed into a log (the account id ends up in every URL).
+_R2_SHAPES = {
+    "R2_ACCOUNT_ID": (re.compile(r"^[0-9a-f]{32}$"), "32 hex characters"),
+    "R2_ACCESS_KEY_ID": (re.compile(r"^[0-9a-f]{32}$"), "32 hex characters"),
+    "R2_SECRET_ACCESS_KEY": (re.compile(r"^[0-9a-f]{64}$"), "64 hex characters"),
+    "R2_BUCKET": (re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"), "a bucket name"),
+}
+
+
 @dataclass(frozen=True)
 class R2Credentials:
-    account_id: str
-    access_key_id: str
-    secret_access_key: str
+    account_id: str = field(repr=False)
+    access_key_id: str = field(repr=False)
+    secret_access_key: str = field(repr=False)
     bucket: str
 
     @classmethod
     def from_env(cls) -> "R2Credentials":
-        names = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
-        missing = [name for name in names if not os.environ.get(name)]
+        missing = [name for name in _R2_SHAPES if not os.environ.get(name, "").strip()]
         if missing:
             raise RuntimeError(f"missing environment variables: {', '.join(missing)}")
-        return cls(*(os.environ[name] for name in names))
+        values = {name: os.environ[name].strip() for name in _R2_SHAPES}
+        wrong = [
+            f"{name} should be {expected} (got {len(values[name])} characters)"
+            for name, (pattern, expected) in _R2_SHAPES.items()
+            if not pattern.match(values[name])
+        ]
+        if wrong:
+            raise RuntimeError("; ".join(wrong))
+        return cls(*values.values())
 
     @property
     def endpoint(self) -> str:

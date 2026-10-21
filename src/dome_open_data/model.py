@@ -40,6 +40,12 @@ SERIES_SCHEMA = schema_of(
 _ANNUAL = re.compile(r"^(\d{4})$")
 _QUARTERLY = re.compile(r"^(\d{4})Q([1-4])$")
 _MONTHLY = re.compile(r"^(\d{4})M(0[1-9]|1[0-2])$")
+_SDMX_PERIOD = {
+    "A": re.compile(r"^(\d{4})$"),
+    "Q": re.compile(r"^(\d{4})-Q([1-4])$"),
+    "M": re.compile(r"^(\d{4})-M?(0[1-9]|1[0-2])$"),
+    "D": re.compile(r"^(\d{4})-(\d{2})-(\d{2})$"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +67,22 @@ def parse_period(text: str) -> tuple[date, str]:
     if match := _MONTHLY.match(text):
         return date(int(match[1]), int(match[2]), 1), "M"
     raise ValueError(f"unrecognised period {text!r}")
+
+
+def parse_sdmx_period(text: str, freq: str) -> tuple[date, str]:
+    """SDMX TIME_PERIOD for a FREQ code. Business-daily (B) is stored as daily (D)."""
+    freq = "D" if freq == "B" else freq
+    pattern = _SDMX_PERIOD.get(freq)
+    match = pattern.match(text) if pattern else None
+    if match is None:
+        raise ValueError(f"unrecognised period {text!r} for frequency {freq!r}")
+    if freq == "A":
+        return date(int(match[1]), 1, 1), freq
+    if freq == "Q":
+        return date(int(match[1]), 3 * int(match[2]) - 2, 1), freq
+    if freq == "M":
+        return date(int(match[1]), int(match[2]), 1), freq
+    return date(int(match[1]), int(match[2]), int(match[3])), freq
 
 
 def observations_table(observations: list[Observation], vintage: date) -> pa.Table:

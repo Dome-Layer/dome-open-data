@@ -1,0 +1,11 @@
+iso3,iso2,m49,name,kind,successors,note
+XKX,XK,,Kosovo,current,,No ISO 3166 code; XKX is the code the World Bank and the EU use. IMF writes KOS. Not in UN WPP (counted under Serbia).
+CHI,,830,Channel Islands,current,,World Bank code for Guernsey and Jersey together; ISO and UN WPP list GGY and JEY separately.
+SUN,SU,810,USSR,historical,ARM;AZE;BLR;EST;GEO;KAZ;KGZ;LTU;LVA;MDA;RUS;TJK;TKM;UKR;UZB,ISO 3166-3 former code. Dissolved 1991.
+YUG,YU,890,Yugoslavia (Socialist Federal Republic),historical,BIH;HRV;MKD;MNE;SRB;SVN;XKX,ISO 3166-3 former code. Dissolved 1991 to 1992.
+CSK,CS,200,Czechoslovakia,historical,CZE;SVK,ISO 3166-3 former code. Dissolved 1993.
+DDR,DD,278,German Democratic Republic,historical,DEU,ISO 3166-3 former code. Joined Germany 1990.
+SCG,CS,891,Serbia and Montenegro,historical,MNE;SRB,ISO 3166-3 former code. Dissolved 2006.
+ANT,AN,530,Netherlands Antilles,historical,BES;CUW;SXM,ISO 3166-3 former code. Dissolved 2010.
+YAR,,886,Yemen Arab Republic,historical,YEM,Not an ISO code; used by the IMF. Unified 1990.
+YMD,YD,720,Yemen (Democratic),historical,YEM,ISO 3166-3 former code. Unified 1990.

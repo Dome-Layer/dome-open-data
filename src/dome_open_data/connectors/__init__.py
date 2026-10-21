@@ -51,14 +51,14 @@ class ConnectorImpl(Protocol):
 
 
 def connector_for(source: Source) -> ConnectorImpl:
+    from dome_open_data.connectors.bulk import BULK_DIALECTS, BulkFile
+    from dome_open_data.connectors.sdmx import SDMX_DIALECTS, Sdmx
     from dome_open_data.connectors.worldbank import WorldBank
 
-    implementations: dict[tuple[str, str | None], ConnectorImpl] = {
-        ("rest", "worldbank"): WorldBank(),
-    }
-    try:
-        return implementations[(source.connector, source.dialect)]
-    except KeyError:
-        raise NotImplementedError(
-            f"no connector for {source.connector}/{source.dialect} ({source.id})"
-        ) from None
+    if (source.connector, source.dialect) == ("rest", "worldbank"):
+        return WorldBank()
+    if source.connector == "sdmx" and source.dialect in SDMX_DIALECTS:
+        return Sdmx(source)
+    if source.connector == "bulk_file" and source.dialect in BULK_DIALECTS:
+        return BulkFile(source)
+    raise NotImplementedError(f"no connector for {source.connector}/{source.dialect} ({source.id})")

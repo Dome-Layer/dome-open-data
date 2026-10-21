@@ -210,5 +210,6 @@ Verified against the live sources on **2026-10-19** (Sprint OD Step 0).
 
 ## Changelog
 
+- **2026-10-21 (session 1 closed):** "Done when" met. A local run landed vintage 2026-10-20 and a forced `collect` dispatch from Actions landed 2026-10-21 (run 39562732321); both verified at 759,559 rows. R2 refused a deliberate overwrite (create-only writes hold on the real bucket). The R2 token was rolled after its value was printed in an error; credential values are now shape-checked before any request.
 - **2026-10-19 (session 1):** Repo scaffolded; registry with licence gate; R2 storage with create-only writes; World Bank WDI (72 indicators) end to end through the `rest` connector into raw, clean and catalog; `verify` recount via DuckDB; CI, gitleaks and the `collect` workflow. Step 0 endpoint findings recorded above.
 - **2026-10-19:** Specified (Sprint OD); positioning, priority and spend decided (DOME_DECISIONS 2026-10-19).

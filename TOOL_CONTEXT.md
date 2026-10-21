@@ -221,9 +221,9 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
 - Vintage pruning: keep every vintage forever, or thin old ones (for example monthly after a year)?
 - Licence for the public code (none chosen yet, which means all rights reserved).
 - Full WDI (all 1,498 indicators): via REST with `keep_raw: false`, or the bulk zip as a `bulk_file` source?
-- dataverse.nl from GitHub runners: no challenge from a home connection on 2026-10-21; the first
-  scheduled runs (session 3) will show whether runner IPs are challenged. If they are, the run
-  fails cleanly and the fallback is a manual local run, not a workaround.
+- dataverse.nl from GitHub runners: no challenge on 2026-10-21 (both files downloaded from a runner);
+  one connect timeout on a download. If a challenge ever appears the run fails cleanly and the
+  fallback is a manual local run, not a workaround.
 - Pink Sheet `Monthly Indices` and IMF ER end-of-period rates: not collected yet.
 - Gate 3: monetisation direction, licence recheck, and whether this appears on domelayer.com.
 
@@ -231,6 +231,7 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
 
 ## Changelog
 
+- **2026-10-21 (session 2 landed):** #4 merged (`d9c5dc7`). One `collect` dispatch per new source from Actions: all eight collected and verified in R2 at the same row counts as the local runs (ecb_policy_rates 186, ecb_fx 263,338, imf_weo 177,804, imf_er 171,450, worldbank_pinksheet 50,451, un_wpp 843,486, ggdc_pwt 416,285, ggdc_maddison 39,241). dataverse.nl served the runner real files, no challenge. Maddison's first run failed on a connect timeout to the file download (run 39577297911, a clean failure, nothing stored but the failed run row); the retry passed (run 39577678303).
 - **2026-10-21 (session 2):** `sdmx` connector (dialects `imf`, `ecb`) and `bulk_file` connector (fixed URL, link discovered on a page, dataverse dataset; dialects `pinksheet`, `wpp`, `pwt`, `maddison`) with a magic-byte guard. Eight new registry entries: `imf_weo`, `imf_er`, `ecb_policy_rates`, `ecb_fx`, `worldbank_pinksheet`, `un_wpp`, `ggdc_pwt`, `ggdc_maddison`. Country crosswalk (246 countries incl. historical, 126 aggregates) and its builder. Each source collected locally end to end, verified, and a second run wrote nothing (change detection). R2 landing waits for the merge.
 - **2026-10-21 (session 1 closed):** "Done when" met. A local run landed vintage 2026-10-20 and a forced `collect` dispatch from Actions landed 2026-10-21 (run 39562732321); both verified at 759,559 rows. R2 refused a deliberate overwrite (create-only writes hold on the real bucket). The R2 token was rolled after its value was printed in an error; credential values are now shape-checked before any request.
 - **2026-10-19 (session 1):** Repo scaffolded; registry with licence gate; R2 storage with create-only writes; World Bank WDI (72 indicators) end to end through the `rest` connector into raw, clean and catalog; `verify` recount via DuckDB; CI, gitleaks and the `collect` workflow. Step 0 endpoint findings recorded above.

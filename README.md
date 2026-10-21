@@ -33,6 +33,7 @@ python -m dome_open_data list                                       # validate t
 python -m dome_open_data run worldbank_wdi --local-dir data/local   # into a local folder
 python -m dome_open_data run worldbank_wdi                          # into R2 (reads .env)
 python -m dome_open_data verify worldbank_wdi                       # recount newest vintage
+python -m dome_open_data crosswalk                                  # rebuild crosswalk/*.csv
 ```
 
 `run` checks the source's change signal first and exits without writing anything when it is

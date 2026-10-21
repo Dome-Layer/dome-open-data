@@ -1,0 +1,127 @@
+publisher,code,name
+imf,CWX,CWX
+imf,G001,G001
+imf,G110,G110
+imf,G119,G119
+imf,G129,Benelux
+imf,G163,Euro Area (EA)
+imf,G200,G200
+imf,G205,G205
+imf,G309,G309
+imf,G400,G400
+imf,G505,G505
+imf,G510,G510
+imf,G603,G603
+imf,G758,G758
+imf,G759,G759
+imf,G903,G903
+imf,G998,G998
+imf,GX123,Other Advanced Economies (Advanced Economies excluding G7 and Euro Area countries)
+un,UN5500,Central Asia
+un,UN5501,Southern Asia
+un,UN5505,Americas
+un,UN900,World
+un,UN903,Africa
+un,UN904,Latin America and the Caribbean
+un,UN905,Northern America
+un,UN906,Eastern Asia
+un,UN908,Europe
+un,UN909,Oceania
+un,UN910,Eastern Africa
+un,UN911,Middle Africa
+un,UN912,Northern Africa
+un,UN913,Southern Africa
+un,UN914,Western Africa
+un,UN915,Caribbean
+un,UN916,Central America
+un,UN920,South-Eastern Asia
+un,UN922,Western Asia
+un,UN923,Eastern Europe
+un,UN924,Northern Europe
+un,UN925,Southern Europe
+un,UN926,Western Europe
+un,UN927,Australia/New Zealand
+un,UN928,Melanesia
+un,UN931,South America
+un,UN935,Asia
+un,UN954,Micronesia
+un,UN957,Polynesia
+worldbank,AFE,Africa Eastern and Southern
+worldbank,AFR,Africa
+worldbank,AFW,Africa Western and Central
+worldbank,ARB,Arab World
+worldbank,BEA,East Asia & Pacific (IBRD-only countries)
+worldbank,BEC,Europe & Central Asia (IBRD-only countries)
+worldbank,BHI,IBRD countries classified as high income
+worldbank,BLA,Latin America & the Caribbean (IBRD-only countries)
+worldbank,BMN,"Middle East, North Africa, Afghanistan & Pakistan (IBRD only)"
+worldbank,BSS,Sub-Saharan Africa (IBRD-only countries)
+worldbank,CAA,Sub-Saharan Africa (IFC classification)
+worldbank,CEA,East Asia and the Pacific (IFC classification)
+worldbank,CEB,Central Europe and the Baltics
+worldbank,CEU,Europe and Central Asia (IFC classification)
+worldbank,CLA,Latin America and the Caribbean (IFC classification)
+worldbank,CME,Middle East and North Africa (IFC classification)
+worldbank,CSA,South Asia (IFC classification)
+worldbank,CSS,Caribbean small states
+worldbank,DEA,East Asia & Pacific (IDA-eligible countries)
+worldbank,DEC,Europe & Central Asia (IDA-eligible countries)
+worldbank,DLA,Latin America & the Caribbean (IDA-eligible countries)
+worldbank,DMN,"Middle East, North Africa, Afghanistan & Pakistan (IDA total)"
+worldbank,DNS,IDA countries in Sub-Saharan Africa not classified as fragile situations
+worldbank,DSA,South Asia (IDA-eligible countries)
+worldbank,DSF,IDA countries in Sub-Saharan Africa classified as fragile situations
+worldbank,DSS,Sub-Saharan Africa (IDA-eligible countries)
+worldbank,EAP,East Asia & Pacific (excluding high income)
+worldbank,EAR,Early-demographic dividend
+worldbank,EAS,East Asia & Pacific
+worldbank,ECA,Europe & Central Asia (excluding high income)
+worldbank,ECS,Europe & Central Asia
+worldbank,EMU,Euro area
+worldbank,EUU,European Union
+worldbank,FCV,"Fragility, Conflict, and Violence (FCV) situations"
+worldbank,FXS,"IDA countries classified as fragile situations, excluding Sub-Saharan Africa"
+worldbank,HIC,High income
+worldbank,HPC,Heavily indebted poor countries (HIPC)
+worldbank,IBB,"IBRD, including blend"
+worldbank,IBD,IBRD only
+worldbank,IBT,IDA & IBRD total
+worldbank,IDA,IDA total
+worldbank,IDB,IDA blend
+worldbank,IDX,IDA only
+worldbank,INX,Not classified
+worldbank,LAC,Latin America & Caribbean (excluding high income)
+worldbank,LCN,Latin America & Caribbean
+worldbank,LDC,Least developed countries: UN classification
+worldbank,LIC,Low income
+worldbank,LMC,Lower middle income
+worldbank,LMY,Low & middle income
+worldbank,LTE,Late-demographic dividend
+worldbank,MDE,Middle East (developing only)
+worldbank,MEA,"Middle East, North Africa, Afghanistan & Pakistan"
+worldbank,MIC,Middle income
+worldbank,MNA,"Middle East, North Africa, Afghanistan & Pakistan (excluding high income)"
+worldbank,NAC,North America
+worldbank,NAF,North Africa
+worldbank,NRS,Non-resource rich Sub-Saharan Africa countries
+worldbank,NXS,"IDA countries not classified as fragile situations, excluding Sub-Saharan Africa"
+worldbank,OED,OECD members
+worldbank,OSS,Other small states
+worldbank,PRE,Pre-demographic dividend
+worldbank,PSS,Pacific island small states
+worldbank,PST,Post-demographic dividend
+worldbank,RRS,Resource rich Sub-Saharan Africa countries
+worldbank,SAS,South Asia
+worldbank,SSA,Sub-Saharan Africa (excluding high income)
+worldbank,SSF,Sub-Saharan Africa
+worldbank,SST,Small states
+worldbank,SXZ,Sub-Saharan Africa excluding South Africa
+worldbank,TEA,East Asia & Pacific (IDA & IBRD countries)
+worldbank,TEC,Europe & Central Asia (IDA & IBRD countries)
+worldbank,TLA,Latin America & the Caribbean (IDA & IBRD countries)
+worldbank,TMN,"Middle East, North Africa, Afghanistan & Pakistan (IDA & IBRD)"
+worldbank,TSA,South Asia (IDA & IBRD)
+worldbank,TSS,Sub-Saharan Africa (IDA & IBRD countries)
+worldbank,UMC,Upper middle income
+worldbank,WLD,World
+worldbank,XZN,Sub-Saharan Africa excluding South Africa and Nigeria

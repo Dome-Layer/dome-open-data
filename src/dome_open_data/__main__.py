@@ -39,6 +39,15 @@ async def _run(args: argparse.Namespace) -> None:
         )
 
 
+async def _crosswalk(args: argparse.Namespace) -> None:
+    from dome_open_data.crosswalk_build import build
+
+    sources = load_registry(Path(args.registry))
+    async with new_client() as client:
+        countries, aggregates = await build(client, sources["un_wpp"])
+    print(f"crosswalk: {countries} countries, {aggregates} aggregates")
+
+
 async def _verify(args: argparse.Namespace) -> None:
     vintage = date.fromisoformat(args.vintage) if args.vintage else None
     await verify_source(_source(args), _storage(args), vintage)
@@ -62,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--vintage", help="YYYY-MM-DD, default the newest")
     verify.add_argument("--local-dir", help="read a local folder instead of R2")
 
+    commands.add_parser("crosswalk", help="rebuild crosswalk/countries.csv and aggregates.csv")
+
     args = parser.parse_args(argv)
     logs.configure()
     load_env_file(Path(args.env_file))
@@ -70,10 +81,13 @@ def main(argv: list[str] | None = None) -> int:
         for source in load_registry(Path(args.registry)).values():
             print(f"{source.id}\t{source.connector}\t{source.cadence}\t{source.licence.name}")
         return 0
+    commands_run = {"run": _run, "verify": _verify, "crosswalk": _crosswalk}
     try:
-        asyncio.run(_run(args) if args.command == "run" else _verify(args))
+        asyncio.run(commands_run[args.command](args))
     except Exception:
-        log.exception("command failed", extra={"command": args.command, "source": args.source})
+        log.exception(
+            "command failed", extra={"command": args.command, "source": getattr(args, "source", "")}
+        )
         return 1
     return 0
 

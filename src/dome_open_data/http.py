@@ -38,6 +38,12 @@ def new_client(transport: httpx.AsyncBaseTransport | None = None) -> httpx.Async
     )
 
 
+# SDMX-CSV from the IMF API, which picks the format by Accept header.
+CSV_ACCEPT_IMF = {"Accept": "application/vnd.sdmx.data+csv;version=2.0.0"}
+# Leading bytes of the file types bulk sources deliver.
+MAGIC = {"xlsx": b"PK\x03\x04", "gzip": b"\x1f\x8b"}
+
+
 async def get(
     client: httpx.AsyncClient,
     url: str,
@@ -45,21 +51,23 @@ async def get(
     params: dict[str, Any] | None = None,
     attempts: int = 4,
     backoff: float = 2.0,
+    headers: dict[str, str] | None = None,
+    method: str = "GET",
 ) -> httpx.Response:
     for attempt in range(1, attempts + 1):
         await limiter.wait()
         try:
-            response = await client.get(url, params=params)
+            response = await client.request(method, url, params=params, headers=headers)
         except httpx.TransportError as exc:
             reason = f"{type(exc).__name__}: {exc}"
         else:
             if response.status_code not in RETRY_STATUSES:
                 if response.is_error:
-                    raise SourceError(f"GET {response.url} returned {response.status_code}")
+                    raise SourceError(f"{method} {response.url} returned {response.status_code}")
                 return response
             reason = f"status {response.status_code}"
         if attempt == attempts:
-            raise SourceError(f"GET {url} failed after {attempts} attempts ({reason})")
+            raise SourceError(f"{method} {url} failed after {attempts} attempts ({reason})")
         delay = backoff * 2 ** (attempt - 1)
         log.warning("retrying request", extra={"url": url, "attempt": attempt, "reason": reason})
         await asyncio.sleep(delay)
@@ -77,3 +85,24 @@ def require_json(response: httpx.Response) -> Any:
         return response.json()
     except ValueError as exc:
         raise SourceError(f"GET {response.url} returned invalid JSON") from exc
+
+
+def require_file(response: httpx.Response, kind: str) -> bytes:
+    """The body must be the expected file type, checked by its leading bytes. A 200 HTML page
+    (an error page or a bot challenge) fails the run: it is never stored and never worked around."""
+    content_type = response.headers.get("content-type", "")
+    if "html" in content_type or not response.content.startswith(MAGIC[kind]):
+        raise SourceError(
+            f"GET {response.url} returned {content_type or 'no content type'} "
+            f"starting {response.content[:16]!r}, not a {kind} file"
+        )
+    return response.content
+
+
+def require_csv(response: httpx.Response) -> str:
+    content_type = response.headers.get("content-type", "")
+    if "csv" not in content_type:
+        raise SourceError(
+            f"GET {response.url} returned {content_type or 'no content type'}, not CSV"
+        )
+    return response.text

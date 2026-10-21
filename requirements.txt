@@ -10,6 +10,8 @@ certifi==2026.10.19
     #   httpx
 duckdb==1.5.6
     # via -r requirements.in
+et-xmlfile==2.0.0
+    # via openpyxl
 h11==0.16.0
     # via httpcore
 httpcore==1.0.9
@@ -21,6 +23,8 @@ idna==3.20
     #   anyio
     #   httpx
 obstore==0.12.0
+    # via -r requirements.in
+openpyxl==3.1.5
     # via -r requirements.in
 pyarrow==26.0.0
     # via -r requirements.in

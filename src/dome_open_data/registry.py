@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 Domain = Literal["economy", "trade", "climate", "demographics", "longrun"]
 Connector = Literal["sdmx", "rest", "bulk_file"]
 Cadence = Literal["daily", "weekly", "monthly", "yearly"]
-ChangeSignal = Literal["etag", "last_modified", "sdmx_updated_after", "catalogue_date", "none"]
+ChangeSignal = Literal[
+    "etag", "last_modified", "sdmx_updated_after", "catalogue_date", "dataset_version", "none"
+]
 
 
 class RegistryError(ValueError):

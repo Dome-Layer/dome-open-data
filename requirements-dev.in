@@ -5,3 +5,4 @@ pytest~=9.0.3
 pre-commit>=4.0,<5.0
 types-PyYAML
 pyarrow-stubs
+types-openpyxl

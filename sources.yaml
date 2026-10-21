@@ -108,3 +108,279 @@
       - IT.NET.USER.ZS
       - IT.CEL.SETS.P2
       - MS.MIL.XPND.GD.ZS
+
+# Session 2 (2026-10-21): sdmx and bulk_file sources. Options per connector are
+# validated in connectors/sdmx.py and connectors/bulk.py.
+
+- id: imf_weo
+  name: IMF World Economic Outlook
+  publisher: imf
+  dataset: weo
+  domain: economy
+  connector: sdmx
+  dialect: imf
+  endpoint: https://api.imf.org/external/sdmx/2.1/
+  cadence: monthly
+  change_signal: dataset_version
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 200
+  licence:
+    name: IMF Copyright and Usage
+    commercial_ok: "ask"
+    share_alike: false
+    attribution: "Source: International Monetary Fund, World Economic Outlook database."
+  options:
+    flow: IMF.RES,WEO
+    # Curated core set; values for the vintage year and later are marked as projections.
+    # With detail=dataonly the API sends values in full units (dollars, persons), not scaled.
+    key: .NGDP_RPCH+NGDPD+NGDPDPC+PPPGDP+PPPPC+PPPEX+NGDP_D+PCPIPCH+PCPIEPCH+LUR+LP+GGXWDG_NGDP+GGXCNL_NGDP+GGR_NGDP+GGX_NGDP+BCA_NGDPD+NGSD_NGDP+NID_NGDP+TM_RPCH+TX_RPCH.A
+    start_period: "1980"
+    freq_dimension: FREQUENCY
+    geo_dimension: COUNTRY
+    code_dimensions: [INDICATOR]
+    projection_from_vintage_year: true
+    source_url: https://data.imf.org/en/datasets/IMF.RES:WEO
+    series:
+      NGDP_RPCH: { title: "Gross domestic product, constant prices, percent change", unit: "Percent change" }
+      NGDPD: { title: "Gross domestic product, current prices, U.S. dollars", unit: "U.S. dollars" }
+      NGDPDPC: { title: "Gross domestic product per capita, current prices, U.S. dollars", unit: "U.S. dollars per person" }
+      PPPGDP: { title: "Gross domestic product, current prices, purchasing power parity", unit: "International dollars" }
+      PPPPC: { title: "Gross domestic product per capita, purchasing power parity", unit: "International dollars per person" }
+      PPPEX: { title: "Implied PPP conversion rate", unit: "National currency per international dollar" }
+      NGDP_D: { title: "Gross domestic product deflator", unit: "Index" }
+      PCPIPCH: { title: "Inflation, average consumer prices, percent change", unit: "Percent change" }
+      PCPIEPCH: { title: "Inflation, end of period consumer prices, percent change", unit: "Percent change" }
+      LUR: { title: "Unemployment rate", unit: "Percent of total labor force" }
+      LP: { title: "Population", unit: "Persons" }
+      GGXWDG_NGDP: { title: "General government gross debt", unit: "Percent of GDP" }
+      GGXCNL_NGDP: { title: "General government net lending or borrowing", unit: "Percent of GDP" }
+      GGR_NGDP: { title: "General government revenue", unit: "Percent of GDP" }
+      GGX_NGDP: { title: "General government total expenditure", unit: "Percent of GDP" }
+      BCA_NGDPD: { title: "Current account balance", unit: "Percent of GDP" }
+      NGSD_NGDP: { title: "Gross national savings", unit: "Percent of GDP" }
+      NID_NGDP: { title: "Total investment", unit: "Percent of GDP" }
+      TM_RPCH: { title: "Volume of imports of goods and services, percent change", unit: "Percent change" }
+      TX_RPCH: { title: "Volume of exports of goods and services, percent change", unit: "Percent change" }
+
+- id: imf_er
+  name: IMF exchange rates
+  publisher: imf
+  dataset: er
+  domain: economy
+  connector: sdmx
+  dialect: imf
+  endpoint: https://api.imf.org/external/sdmx/2.1/
+  cadence: monthly
+  change_signal: dataset_version
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 75
+  licence:
+    name: IMF Copyright and Usage
+    commercial_ok: "ask"
+    share_alike: false
+    attribution: "Source: International Monetary Fund, Exchange Rates database."
+  options:
+    flow: IMF.STA,ER
+    # National currency per US dollar, period average, annual and monthly. Euro area
+    # members appear only up to their euro adoption; the euro itself is EMU in ecb_fx.
+    key: .XDC_USD.PA_RT.A+M
+    freq_dimension: FREQUENCY
+    geo_dimension: COUNTRY
+    code_dimensions: [INDICATOR, TYPE_OF_TRANSFORMATION]
+    source_url: https://data.imf.org/en/datasets/IMF.STA:ER
+    series:
+      XDC_USD.PA_RT: { title: "Exchange rate, national currency per US dollar, period average", unit: "National currency per US dollar" }
+
+- id: ecb_policy_rates
+  name: ECB key interest rates
+  publisher: ecb
+  dataset: policy_rates
+  domain: economy
+  connector: sdmx
+  dialect: ecb
+  endpoint: https://data-api.ecb.europa.eu/service/data/
+  cadence: weekly
+  change_signal: last_modified
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 400
+  licence:
+    name: ECB statistics reuse policy
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: European Central Bank, ECB Data Portal."
+  options:
+    flow: FM
+    # Main refinancing, deposit facility and marginal lending rates, on the dates they changed.
+    key: B.U2.EUR.4F.KR.MRR_FR+DFR+MLFR.LEV
+    freq_dimension: FREQ
+    geo: EMU
+    code_dimensions: [PROVIDER_FM_ID, DATA_TYPE_FM]
+    unit_template: "Percent per annum"
+    source_url: https://data.ecb.europa.eu/data/datasets/FM
+
+- id: ecb_fx
+  name: ECB euro reference exchange rates
+  publisher: ecb
+  dataset: fx
+  domain: economy
+  connector: sdmx
+  dialect: ecb
+  endpoint: https://data-api.ecb.europa.eu/service/data/
+  cadence: daily
+  change_signal: last_modified
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 5
+  licence:
+    name: ECB statistics reuse policy
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: European Central Bank, ECB Data Portal."
+  options:
+    flow: EXR
+    # Daily reference rates, foreign currency per euro, every currency the ECB quotes.
+    key: D..EUR.SP00.A
+    freq_dimension: FREQ
+    geo: EMU
+    code_dimensions: [CURRENCY, CURRENCY_DENOM, EXR_TYPE, EXR_SUFFIX]
+    unit_template: "{CURRENCY} per EUR"
+    source_url: https://data.ecb.europa.eu/data/datasets/EXR
+
+- id: worldbank_pinksheet
+  name: World Bank Commodity Price Data (The Pink Sheet), monthly prices
+  publisher: worldbank
+  dataset: pinksheet
+  domain: trade
+  connector: bulk_file
+  dialect: pinksheet
+  endpoint: https://www.worldbank.org/en/research/commodity-markets
+  cadence: monthly
+  change_signal: last_modified
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 45
+  licence:
+    name: CC BY 4.0
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: World Bank, Commodity Price Data (The Pink Sheet)."
+  options:
+    # The file URL carries a hash that changes monthly: found on the page every run.
+    discover:
+      page: https://www.worldbank.org/en/research/commodity-markets
+      pattern: https://thedocs\.worldbank\.org/[^"'\s<>]*/CMO-Historical-Data-Monthly\.xlsx
+    file_type: xlsx
+    sheet: Monthly Prices
+    geo: WLD
+
+- id: un_wpp
+  name: UN World Population Prospects 2024, demographic indicators (medium variant)
+  publisher: un
+  dataset: wpp
+  domain: demographics
+  connector: bulk_file
+  dialect: wpp
+  endpoint: https://population.un.org/wpp/
+  cadence: yearly
+  change_signal: etag
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 900
+  licence:
+    name: CC BY 3.0 IGO
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024."
+  options:
+    # Biennial editions: the edition is in the file name; a new edition is a new registry entry.
+    url: https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz
+    file_type: gzip
+    # Countries and areas keep their ISO code; the M49 aggregates kept here become UN<LocID>.
+    loc_types: [Country/Area, World, Geographic region, Subregion]
+    # WPP 2024 estimates run to 2023; 2024 onward is the medium-variant projection.
+    projection_from: 2024
+    series:
+      TPopulation1July: { title: "Total population, as of 1 July", unit: "Thousands" }
+      PopDensity: { title: "Population density, as of 1 July", unit: "Persons per square km" }
+      PopSexRatio: { title: "Population sex ratio, as of 1 July", unit: "Males per 100 females" }
+      MedianAgePop: { title: "Median age, as of 1 July", unit: "Years" }
+      PopGrowthRate: { title: "Population growth rate", unit: "Percent" }
+      NatChange: { title: "Natural change, births minus deaths", unit: "Thousands" }
+      NetMigrations: { title: "Net number of migrants", unit: "Thousands" }
+      CNMR: { title: "Net migration rate", unit: "Per 1,000 population" }
+      Births: { title: "Births", unit: "Thousands" }
+      CBR: { title: "Crude birth rate", unit: "Births per 1,000 population" }
+      TFR: { title: "Total fertility rate", unit: "Live births per woman" }
+      SRB: { title: "Sex ratio at birth", unit: "Males per 100 female births" }
+      MAC: { title: "Mean age at childbearing", unit: "Years" }
+      Deaths: { title: "Total deaths", unit: "Thousands" }
+      CDR: { title: "Crude death rate", unit: "Deaths per 1,000 population" }
+      LEx: { title: "Life expectancy at birth, both sexes", unit: "Years" }
+      LExMale: { title: "Life expectancy at birth, males", unit: "Years" }
+      LExFemale: { title: "Life expectancy at birth, females", unit: "Years" }
+      LE65: { title: "Life expectancy at age 65, both sexes", unit: "Years" }
+      IMR: { title: "Infant mortality rate", unit: "Infant deaths per 1,000 live births" }
+      Q5: { title: "Under-five mortality", unit: "Deaths under age 5 per 1,000 live births" }
+
+- id: ggdc_pwt
+  name: Penn World Table 11.0
+  publisher: ggdc
+  dataset: pwt
+  domain: longrun
+  connector: bulk_file
+  dialect: pwt
+  endpoint: https://dataverse.nl/
+  cadence: yearly
+  change_signal: dataset_version
+  rate_limit: { per_second: 0.5 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 1100
+  licence:
+    name: CC BY 4.0
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: Feenstra, Robert C., Robert Inklaar and Marcel P. Timmer (2015), The Next Generation of the Penn World Table, American Economic Review 105(10), 3150-3182; Penn World Table 11.0, www.ggdc.net/pwt."
+  options:
+    dataverse: { doi: "doi:10.34894/FABVLR", filename: pwt110.xlsx }
+    file_type: xlsx
+    sheet: Data
+    # Titles and units come from the file's Legend sheet. The i_ flags and cor_exp are
+    # data-quality markers, not measures.
+    exclude: [i_cig, i_xm, i_xr, i_outlier, i_irr, cor_exp]
+
+- id: ggdc_maddison
+  name: Maddison Project Database 2023
+  publisher: ggdc
+  dataset: maddison
+  domain: longrun
+  connector: bulk_file
+  dialect: maddison
+  endpoint: https://dataverse.nl/
+  cadence: yearly
+  change_signal: dataset_version
+  rate_limit: { per_second: 0.5 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 1200
+  licence:
+    name: CC BY 4.0
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: Maddison Project Database, version 2023. Bolt, Jutta and Jan Luiten van Zanden (2024), Maddison style estimates of the evolution of the world economy: A new 2023 update, Journal of Economic Surveys, 1-41. When fewer than 12 countries are shown, also cite the original sources listed in the file."
+  options:
+    dataverse: { doi: "doi:10.34894/INZBF2", filename: mpd2023_web.xlsx }
+    file_type: xlsx
+    sheet: Full data
+    series:
+      gdppc: { title: "Real GDP per capita", unit: "2011 international dollars" }
+      pop: { title: "Population", unit: "Thousands" }

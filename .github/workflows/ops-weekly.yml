@@ -46,16 +46,24 @@ jobs:
       - name: Freshness
         id: freshness
         run: |
+          # GitHub runs every step with `bash -e`, so the exit code has to be caught here or
+          # the step dies on it: exit 2 is this check finding something, which is the point.
+          set +e
           set -uo pipefail
           python -m dome_open_data freshness | tee /tmp/freshness.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Storage
         id: storage
         run: |
+          # GitHub runs every step with `bash -e`, so the exit code has to be caught here or
+          # the step dies on it: exit 2 is this check finding something, which is the point.
+          set +e
           set -uo pipefail
           python -m dome_open_data usage | tee /tmp/usage.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Stale sources
         run: |

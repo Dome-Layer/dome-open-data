@@ -1,0 +1,22 @@
+# The weekly collection schedule: Mondays at 05:41 UTC.
+#
+# Which sources run is decided by `cadence: weekly` in sources.yaml, not here. The work itself
+# is in collect-cadence.yml.
+
+name: collect weekly
+
+on:
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  collect:
+    uses: ./.github/workflows/collect-cadence.yml
+    with:
+      cadence: weekly
+    secrets: inherit

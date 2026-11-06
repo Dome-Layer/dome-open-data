@@ -203,6 +203,7 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
 | Pink Sheet (`worldbank_pinksheet`) | bulk_file (`pinksheet`) | Link discovered on `https://www.worldbank.org/en/research/commodity-markets` (one match required); 2026-10-21: `.../74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Historical-Data-Monthly.xlsx` | Discovered URL + `Last-Modified` (2026-10-02) | Sheet `Monthly Prices`: names row, units row, then `1960M01` periods; `…` means no value. 71 series, code = slug of the name (`CRUDE_OIL_BRENT`), `geo = WLD`. The `Monthly Indices` sheet (nested headers) is not collected yet. 50,451 rows |
 | UN WPP 2024 (`un_wpp`) | bulk_file (`wpp`) | `https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz` (16.6 MB, gzip magic checked) | ETag (`"0x8DD1BA9EBFD1565"`, 2024-12-13) | The `population.un.org/wpp/downloads` page is **404**. 21 curated indicators; location types Country/Area, World, Geographic region, Subregion (aggregates become `UN<LocID>`, e.g. `UN900` World). 1950 to 2100: 2024 onward is `projection`. 843,486 rows |
 | PWT 11.0 (`ggdc_pwt`) | bulk_file (`pwt`) | dataverse.nl API `api/datasets/:persistentId/?persistentId=doi:10.34894/FABVLR`, file `pwt110.xlsx` (id 554105) via `api/access/datafile/{id}` | Dataverse version (2.0) + file id + checksum | Downloads redirect to SURF object storage (`objectstore.surf.nl`). **No Anubis challenge on 2026-10-21**, from a home connection; the xlsx magic check turns any HTML answer into a failed run, never a workaround. Titles and units from the file's Legend sheet; `i_*` flags and `cor_exp` excluded. 416,285 rows |
+| IMF PortWatch chokepoints (`imf_portwatch`) | bulk_file (`arcgis_hub`) | Change signal from `editingInfo.lastEditDate` on the FeatureServer layer; file from the Hub CSV export `hub.arcgis.com/api/download/v1/items/3da2b9ca97684916b75c4013f95d18ab/csv?layers=0` | `editingInfo.lastEditDate` (1793715201792 on 2026-11-06) + the options hash | 28 chokepoints x 14 measures x every day since 2019-01-01, about 1.1 M observations a vintage, so **weekly** even though the data is daily (it also runs about ten days behind). `geo` holds the chokepoint id (`chokepoint1`), not a country; the name is in the series title. Counts are transit calls (one ship per 48 h); `capacity_*` are estimated trade volumes in metric tons (IMF WP/2021/225), not maximum capacity. **The quota is the constraint, see the Step 0 section above**, and on 2026-11-06 the Hub export itself was failing to regenerate | IMF terms, `commercial_ok: ask` |
 | Maddison 2023 (`ggdc_maddison`) | bulk_file (`maddison`) | Same API, `doi:10.34894/INZBF2`, file `mpd2023_web.xlsx` (id 421302) | Dataverse version (1.0) + file id + checksum | Sheet `Full data`, years from 1 AD to 2022 (period `0001-01-01` is valid). Historical codes `CSK`, `SUN`, `YUG`; `SDN` is former Sudan. When fewer than 12 countries are shown, the original papers must be cited (in the attribution). 39,241 rows |
 
 ### Session 3 Step 0: IMF PortWatch chokepoints (verified 2026-11-06)
@@ -232,12 +233,52 @@ The only new source in session 3. Verified live before any connector was written
 
 ---
 
+## Unattended operation (session 3)
+
+Four schedules, one per cadence, each a matrix over the registry entries with that cadence.
+`collect-cadence.yml` holds the work and the four `collect-<cadence>.yml` files are the
+schedules; `collect.yml` stays for collecting one source on demand.
+
+| Workflow | When | What runs |
+|---|---|---|
+| `collect-daily` | 05:23 UTC daily | every `cadence: daily` entry (`ecb_fx`) |
+| `collect-weekly` | Mondays 05:41 UTC | `ecb_policy_rates`, `imf_portwatch` |
+| `collect-monthly` | the 1st, 05:47 UTC | `worldbank_wdi`, `imf_weo`, `imf_er`, `worldbank_pinksheet` |
+| `collect-yearly` | 2 January, 05:53 UTC | `un_wpp`, `ggdc_pwt`, `ggdc_maddison` |
+| `ops weekly` | Mondays 06:37 UTC | freshness, the storage guard, the heartbeat commit |
+
+- **The matrix is read from `sources.yaml` at run time** (`python -m dome_open_data ids --cadence
+  weekly`), so adding a source never means editing a workflow. `fail-fast: false`, two jobs at a
+  time, one concurrency group per cadence.
+- **The vintage gate** (`validate_against_previous`) runs after the schema checks and before the
+  clean write. It blocks a vintage that holds less than half the previous vintage's rows or
+  series: a truncated download or a publisher mid-revision never replaces good data. Columns and
+  dtypes need no comparison because every clean file is written against the one
+  `TIMESERIES_SCHEMA`. Smaller drops pass: revisions legitimately remove rows, and an alert on
+  every revision would be ignored within a month.
+- **One open issue per subject** (`ops/alert.sh`, label `open-data`): the first failure opens it,
+  later failures comment, a success closes it. Subjects are each source, stale sources, and the
+  storage guard.
+- **Freshness** compares each source's newest clean vintage with its own
+  `expected_staleness_days`; a source never collected counts as stale. Exit 2 means it found
+  something, which is not the same as the check breaking.
+- **The storage guard** sums the bucket and alerts at 8 GiB of the 10 GB free tier. On 2026-11-06
+  the store held 205 objects, 0.07 GiB.
+- **The heartbeat** commits `ops/heartbeat.txt` weekly, because GitHub disables scheduled
+  workflows after 60 days without repository activity and a workflow run does not count.
+- **The run log** was already in place from session 1: one Parquet file per run under
+  `catalog/runs/source=<id>/`, including failed runs. Nothing was added for it.
+
+---
+
 ## Known limitations
 
 - GitHub's scheduler is best effort: runs can start late or be skipped under load. Fine for daily or slower data; not suitable for intraday.
 - The free tier caps the store at about 10 GB, so gridded climate data is stored as aggregates only, and large sources need `keep_raw: false` or a curated selection (see WDI).
 - Licence fields are recorded by hand from each source's terms; they are a guide, not legal advice.
 - `catalog/runs/` gains one small file per collected or failed run; compact it if it ever grows large.
+- `imf_portwatch` depends on ArcGIS Hub regenerating its CSV export. That is outside this
+  pipeline's control, and it was broken when the source was added (see Open questions).
 
 ---
 
@@ -250,16 +291,26 @@ The only new source in session 3. Verified live before any connector was written
   one connect timeout on a download. If a challenge ever appears the run fails cleanly and the
   fallback is a manual local run, not a workaround.
 - Pink Sheet `Monthly Indices` and IMF ER end-of-period rates: not collected yet.
-- PortWatch chokepoints: `rest` with ArcGIS paging as the sprint specifies, or `bulk_file`
-  on the Hub CSV export? The quota findings above favour the export (one request, 202 means
-  "not ready" and the next schedule picks it up); paging is 80 requests into a limit that is
-  already saturated by other consumers. Francesco decides; the sprint brief says `rest`.
+- PortWatch: whether to add the paged `rest` path after all. Francesco chose the Hub CSV export
+  on 2026-11-06 and that is what is built, but the export has not been collected once: between
+  10:24 and 11:12 UTC that day it answered 202 at 5% generated six times and HTTP 500 "Unable to
+  perform query. Too many requests." four times, having been stuck since 2026-11-03. The weekly
+  job therefore fails cleanly and opens one issue until the Hub recovers. If it never does, the
+  options are paging the service with heavy backoff or dropping the source.
 - Gate 3: monetisation direction, licence recheck, and whether this appears on domelayer.com.
 
 ---
 
 ## Changelog
 
+- **2026-11-06 (session 3):** cadence schedules, the vintage gate, one issue per subject, the
+  weekly freshness and storage checks, the heartbeat, and the `arcgis_hub` dialect with the
+  `imf_portwatch` entry. `ruff`, `mypy` and 86 tests green. Verified live: `freshness` against R2
+  found `ecb_fx` 16 days stale against its 5-day limit (nothing has been scheduled since session
+  2, which is the point of the check), `usage` reported 205 objects and 0.07 GiB, and a real
+  `run imf_portwatch` failed cleanly on the Hub export (four attempts, HTTP 500, exit 1, nothing
+  written but the failed run row). The workflows themselves can only be exercised once they are
+  on `main`.
 - **2026-11-06 (session 3 Step 0):** repo clean at `b19ed52`, no open PRs. Sprint drift fixed in
   `dome-docs` (`d5ca1f3`). IMF PortWatch chokepoints verified live: service URL, 21 fields, 79,940
   rows, 2019-01-01 to 2026-10-25, 1000-row pages, a shared quota that was already exceeded, 429 as

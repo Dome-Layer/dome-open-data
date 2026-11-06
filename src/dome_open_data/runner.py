@@ -13,7 +13,12 @@ from dome_open_data.connectors import connector_for
 from dome_open_data.model import TIMESERIES_SCHEMA, observations_table
 from dome_open_data.registry import Source
 from dome_open_data.storage import Storage, VintageExistsError
-from dome_open_data.validate import ValidationError, validate_timeseries
+from dome_open_data.validate import (
+    ValidationError,
+    VintageStats,
+    validate_against_previous,
+    validate_timeseries,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +46,27 @@ def raw_vintage_prefix(source: Source, vintage: date) -> str:
 
 def clean_key(source: Source, vintage: date) -> str:
     return f"{source.clean_prefix}/vintage={vintage.isoformat()}/part-0.parquet"
+
+
+async def previous_stats(storage: Storage, source: Source, before: date) -> VintageStats | None:
+    """The newest collected vintage older than `before`, as the gate needs to see it."""
+    earlier = [v for v in await catalog.vintages(storage, source) if v < before]
+    if not earlier:
+        return None
+    vintage = earlier[-1]
+    manifest_bytes = await storage.get(f"{raw_vintage_prefix(source, vintage)}{MANIFEST}")
+    if manifest_bytes is None:
+        log.warning(
+            "previous vintage has no manifest, skipping the comparison",
+            extra={"source": source.id, "vintage": vintage.isoformat()},
+        )
+        return None
+    manifest = json.loads(manifest_bytes)
+    return VintageStats(
+        vintage=vintage,
+        rows=int(manifest["rows_clean"]),
+        series=await catalog.series_count(storage, source, vintage),
+    )
 
 
 async def run_source(
@@ -98,6 +124,9 @@ async def run_source(
         await storage.put_new(f"{raw_prefix}{MANIFEST}", json.dumps(manifest, indent=2).encode())
 
         validate_timeseries(table, rows_raw - sum(collected.dropped.values()))
+        previous = await previous_stats(storage, source, vintage)
+        if previous is not None:
+            validate_against_previous(table.num_rows, len(collected.series), previous)
         await storage.put_new(clean_key(source, vintage), catalog.parquet_bytes(table))
         rows_clean = table.num_rows
 

@@ -136,6 +136,22 @@ async def write_series(
     await storage.put(f"catalog/series/source={source.id}/part-0.parquet", parquet_bytes(table))
 
 
+async def series_count(storage: Storage, source: Source, vintage: date) -> int | None:
+    """How many series the stored series file holds, if it still describes `vintage`.
+
+    `write_series` overwrites one key per source, so the file always describes the newest
+    collected vintage. None means there is nothing to compare against, not zero series.
+    """
+    data = await storage.get(f"catalog/series/source={source.id}/part-0.parquet")
+    if data is None:
+        return None
+    table = pq.read_table(io.BytesIO(data))
+    if table.num_rows == 0:
+        return None
+    stored = table.column("vintage")[0].as_py()
+    return table.num_rows if stored == vintage else None
+
+
 async def vintages(storage: Storage, source: Source) -> list[date]:
     found = {
         date.fromisoformat(match[1])

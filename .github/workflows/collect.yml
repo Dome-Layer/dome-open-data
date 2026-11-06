@@ -1,6 +1,7 @@
 # Manual collection of one registry source into R2, then an independent
-# check that the clean row count matches the raw files. Session 3 adds the
-# cadence schedules; until then this is the only way a run starts in CI.
+# check that the clean row count matches the raw files. The schedules live in
+# collect-daily/weekly/monthly/yearly.yml; this one collects a single source on
+# demand, for example the first run of a newly added entry.
 
 name: collect
 

@@ -1,0 +1,22 @@
+# The daily collection schedule: every day at 05:23 UTC.
+#
+# Which sources run is decided by `cadence: daily` in sources.yaml, not here. The work itself
+# is in collect-cadence.yml.
+
+name: collect daily
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  collect:
+    uses: ./.github/workflows/collect-cadence.yml
+    with:
+      cadence: daily
+    secrets: inherit

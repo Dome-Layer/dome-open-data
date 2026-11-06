@@ -1,8 +1,8 @@
 """Downloadable files (the `bulk_file` connector).
 
-The fetch layer finds the file one of three ways: a fixed `url`, a link `discover`ed on a page
-(for files whose URL carries a hash that changes, like the Pink Sheet), or a `dataverse`
-dataset (PWT, Maddison). Every download must be the expected file type by its leading bytes:
+The fetch layer finds the file one of four ways: a fixed `url`, a link `discover`ed on a page
+(for files whose URL carries a hash that changes, like the Pink Sheet), a `dataverse`
+dataset (PWT, Maddison), or an ArcGIS `hub` export (IMF PortWatch). Every download must be the expected file type by its leading bytes:
 an HTML answer, which is how a bot challenge arrives, fails the run and is never worked around.
 Each dialect then parses its own file layout into the common time-series model.
 """
@@ -16,7 +16,7 @@ import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 from urllib.parse import unquote, urlparse
 
@@ -25,11 +25,19 @@ import openpyxl
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dome_open_data.connectors import Collected, RawFile, SeriesMeta
-from dome_open_data.http import RateLimiter, SourceError, get, require_file, require_json
+from dome_open_data.http import (
+    RateLimiter,
+    SourceError,
+    arcgis_ok,
+    get,
+    require_csv_bytes,
+    require_file,
+    require_json,
+)
 from dome_open_data.model import Observation
 from dome_open_data.registry import Source
 
-BULK_DIALECTS = {"pinksheet", "wpp", "pwt", "maddison"}
+BULK_DIALECTS = {"pinksheet", "wpp", "pwt", "maddison", "arcgis_hub"}
 
 _PINK_PERIOD = re.compile(r"^(\d{4})M(0[1-9]|1[0-2])$")
 _TRAILING_PARENTHETICAL = re.compile(r"^(.*?)\s*\(([^()]*)\)\s*$")
@@ -58,24 +66,49 @@ class Dataverse(BaseModel):
     filename: str = Field(min_length=1)
 
 
+class HubExport(BaseModel):
+    """An ArcGIS Hub CSV export of one feature service layer.
+
+    The layer itself can be read page by page, but its 1,000-row pages run against the
+    publishing organisation's shared quota, which for IMF PortWatch was already exceeded on
+    every attempt during Step 0 (session 3, 2026-11-06). The Hub keeps a generated CSV of the
+    whole layer and does that paging on its own side, so collection costs two requests: one for
+    the change signal, one for the file.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    item_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    layer: int = Field(default=0, ge=0)
+    # The FeatureServer layer, read only for `editingInfo.lastEditDate`: the Hub export's own
+    # timestamp moves whenever the Hub regenerates the file, which is not a data change.
+    service_layer: str = Field(pattern=r"^https://")
+
+
 class BulkOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     url: str | None = Field(default=None, pattern=r"^https://")
     discover: Discover | None = None
     dataverse: Dataverse | None = None
-    file_type: Literal["xlsx", "gzip"]
+    hub: HubExport | None = None
+    file_type: Literal["xlsx", "gzip", "csv"]
     sheet: str | None = None
     series: dict[str, SeriesSpec] = Field(default_factory=dict)
     exclude: list[str] = Field(default_factory=list)
     loc_types: list[str] = Field(default_factory=list)
     projection_from: int | None = None
     geo: str | None = None
+    date_field: str | None = None
+    geo_field: str | None = None
+    label_field: str | None = None
+    freq: str = "A"
 
     @model_validator(mode="after")
     def _one_location(self) -> "BulkOptions":
-        if sum(x is not None for x in (self.url, self.discover, self.dataverse)) != 1:
-            raise ValueError("exactly one of url, discover, dataverse")
+        locations = (self.url, self.discover, self.dataverse, self.hub)
+        if sum(x is not None for x in locations) != 1:
+            raise ValueError("exactly one of url, discover, dataverse, hub")
         return self
 
 
@@ -118,6 +151,32 @@ def _workbook(data: bytes) -> Any:
     return openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
 
 
+_HUB_DATE = re.compile(r"^(\d{4})[-/](\d{2})[-/](\d{2})")
+
+
+def hub_date(text: str) -> date | None:
+    """A date as the Hub writes it: ISO, slashes, or epoch milliseconds. None if it is none of them.
+
+    An unreadable date is not guessed: the row is dropped and counted, and a file whose dates all
+    stopped parsing ends as an empty table, which the gate rejects.
+    """
+    text = text.strip()
+    if match := _HUB_DATE.match(text):
+        return date(int(match[1]), int(match[2]), int(match[3]))
+    if text.isdigit():
+        return datetime.fromtimestamp(int(text) / 1000, UTC).date()
+    return None
+
+
+def number(cell: str | None) -> float | None:
+    if cell is None or cell.strip() == "":
+        return None
+    try:
+        return float(cell)
+    except ValueError:
+        return None
+
+
 def slug(text: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", text.upper()).strip("_")
 
@@ -142,6 +201,7 @@ class BulkFile:
             "wpp": self._wpp,
             "pwt": self._pwt,
             "maddison": self._maddison,
+            "arcgis_hub": self._arcgis_hub,
         }
         self.parse = parsers[str(source.dialect)]
 
@@ -179,6 +239,20 @@ class BulkFile:
             name = unquote(urlparse(url).path.rsplit("/", 1)[-1])
             token = f"{url}|{signal}|{self._selection()}"
             return Resolved(url, name, token, options.discover.page)
+        if options.hub:
+            hub = options.hub
+            payload = require_json(await get(client, f"{hub.service_layer}?f=json", self.limiter))
+            arcgis_ok(payload, hub.service_layer)
+            edited = (payload.get("editingInfo") or {}).get("lastEditDate")
+            if not edited:
+                raise SourceError(
+                    f"{hub.service_layer}: no editingInfo.lastEditDate to detect changes"
+                )
+            url = (
+                f"{self.source.endpoint}api/download/v1/items/{hub.item_id}/csv?layers={hub.layer}"
+            )
+            name = f"{self.source.dataset}.csv"
+            return Resolved(url, name, f"{edited}|{self._selection()}", hub.service_layer)
         assert options.dataverse is not None
         dataverse = options.dataverse
         api = f"{self.source.endpoint}api/datasets/:persistentId/"
@@ -205,7 +279,10 @@ class BulkFile:
         resolved = await self.resolve(client)
         self.source_url = resolved.source_url
         response = await get(client, resolved.url, self.limiter)
-        data = require_file(response, self.options.file_type)
+        if self.options.file_type == "csv":
+            data = require_csv_bytes(response)
+        else:
+            data = require_file(response, self.options.file_type)
         parsed = self.parse(data)
         return Collected(
             raw_files=[RawFile(resolved.name, resolved.url, data)],
@@ -318,6 +395,35 @@ class BulkFile:
             for name, spec in specs.items():
                 period = date(int(year), 1, 1) if _is_number(year) else None
                 build.add(name, geo, period, "A", row[index[name]], spec.title, spec.unit)
+        return build.parsed()
+
+    def _arcgis_hub(self, data: bytes) -> Parsed:
+        """A Hub CSV export: one row per date and place, one column per measure.
+
+        `geo` holds the publisher's own place id (for PortWatch, the chokepoint id), not a country
+        code, and the place name goes into each series title. The crosswalk does not apply.
+        """
+        options = self.options
+        if not options.series or not options.date_field or not options.geo_field:
+            raise SourceError("arcgis_hub: options.series, date_field and geo_field are required")
+        reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
+        columns = set(reader.fieldnames or [])
+        # A configured label column counts as required: if the publisher renames it, every series
+        # title would quietly lose its place name instead of the run failing.
+        required = {options.date_field, options.geo_field, *options.series}
+        if options.label_field:
+            required.add(options.label_field)
+        missing = required - columns
+        if missing:
+            raise SourceError(f"arcgis_hub: columns missing {sorted(missing)}")
+        build = self._builder()
+        for row in reader:
+            period = hub_date(row[options.date_field] or "")
+            geo = row[options.geo_field]
+            label = (row.get(options.label_field or "") or "").strip()
+            for code, spec in options.series.items():
+                title = f"{spec.title}, {label}" if label else spec.title
+                build.add(code, geo, period, options.freq, number(row[code]), title, spec.unit)
         return build.parsed()
 
     def _maddison(self, data: bytes) -> Parsed:

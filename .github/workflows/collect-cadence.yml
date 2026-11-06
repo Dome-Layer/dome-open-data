@@ -1,0 +1,109 @@
+# One collection run per source of one cadence, called by the four schedule workflows.
+#
+# The matrix is read from sources.yaml at run time rather than written out here: a registry
+# entry is the only place a source is declared, so adding one must not mean remembering to edit
+# a workflow. `fail-fast: false` keeps one broken publisher from cancelling the others, and each
+# job opens or updates that source's own issue, so a failure is never silent and never a pile.
+
+name: collect-cadence
+
+on:
+  workflow_call:
+    inputs:
+      cadence:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: collect-${{ inputs.cadence }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sources: ${{ steps.plan.outputs.sources }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Sources with this cadence
+        id: plan
+        env:
+          CADENCE: ${{ inputs.cadence }}
+        run: |
+          set -euo pipefail
+          SOURCES=$(PYTHONPATH=src python -m dome_open_data ids --cadence "$CADENCE")
+          echo "$CADENCE: $SOURCES"
+          echo "sources=$SOURCES" >> "$GITHUB_OUTPUT"
+
+  collect:
+    needs: plan
+    if: needs.plan.outputs.sources != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # Two at a time: the jobs share nothing but the bucket, and a slow publisher should not
+      # hold up the rest. Raise it when the registry outgrows it.
+      max-parallel: 2
+      matrix:
+        source: ${{ fromJSON(needs.plan.outputs.sources) }}
+    env:
+      PYTHONPATH: src
+      SOURCE: ${{ matrix.source }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Collect
+        run: python -m dome_open_data run "$SOURCE"
+
+      - name: Verify latest vintage
+        run: python -m dome_open_data verify "$SOURCE"
+
+      - name: Open or update this source's issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "\`$SOURCE\` did not collect on the ${{ inputs.cadence }} schedule."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "Nothing was written: a failed run leaves the previous vintage in place and"
+            echo "records a failed row in \`catalog/runs/source=$SOURCE/\`. The next scheduled"
+            echo "run will try again, so this needs a human only if it keeps happening."
+          } > /tmp/alert.md
+          ops/alert.sh open "open data: $SOURCE is failing" /tmp/alert.md
+
+      - name: Close this source's issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ops/alert.sh resolve "open data: $SOURCE is failing" "Collected again: $RUN_URL"

@@ -1,0 +1,22 @@
+# The monthly collection schedule: the 1st at 05:47 UTC.
+#
+# Which sources run is decided by `cadence: monthly` in sources.yaml, not here. The work itself
+# is in collect-cadence.yml.
+
+name: collect monthly
+
+on:
+  schedule:
+    - cron: '47 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  collect:
+    uses: ./.github/workflows/collect-cadence.yml
+    with:
+      cadence: monthly
+    secrets: inherit

@@ -99,6 +99,44 @@ def require_file(response: httpx.Response, kind: str) -> bytes:
     return response.content
 
 
+def arcgis_ok(payload: Any, url: str) -> None:
+    """ArcGIS answers an error with HTTP 200 and the error in the body, quota refusals included.
+
+    Session 3 Step 0 saw `{"error": {"code": 429, ...}}` under a 200 on every attempt at the IMF
+    PortWatch service, because the quota is the publishing organisation's and is shared with
+    every other consumer. Reading the status code alone would have stored an error page as data.
+    """
+    if isinstance(payload, dict) and "error" in payload:
+        error = payload["error"] or {}
+        code = error.get("code", "?")
+        message = error.get("message", "")
+        detail = "; ".join(error.get("details") or [])
+        raise SourceError(f"GET {url} returned 200 with ArcGIS error {code}: {message} {detail}")
+
+
+def require_csv_bytes(response: httpx.Response) -> bytes:
+    """CSV has no magic bytes, so the content type decides, and JSON gets a readable reason.
+
+    A Hub export that is still being generated answers 202 with a JSON progress body. That is
+    not a failure of this pipeline: the run fails cleanly and the next scheduled run collects.
+    """
+    content_type = response.headers.get("content-type", "")
+    if "json" in content_type:
+        payload = response.json()
+        arcgis_ok(payload, str(response.url))
+        status = payload.get("status", "unknown") if isinstance(payload, dict) else "unknown"
+        progress = payload.get("progressInPercent") if isinstance(payload, dict) else None
+        raise SourceError(
+            f"GET {response.url} returned {response.status_code} and JSON, not CSV: "
+            f"the export is {status}" + (f", {progress}% generated" if progress is not None else "")
+        )
+    if "csv" not in content_type and "text/plain" not in content_type:
+        raise SourceError(
+            f"GET {response.url} returned {content_type or 'no content type'}, not CSV"
+        )
+    return response.content
+
+
 def require_csv(response: httpx.Response) -> str:
     content_type = response.headers.get("content-type", "")
     if "csv" not in content_type:

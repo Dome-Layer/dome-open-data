@@ -384,3 +384,55 @@
     series:
       gdppc: { title: "Real GDP per capita", unit: "2011 international dollars" }
       pop: { title: "Population", unit: "Thousands" }
+
+- id: imf_portwatch
+  name: IMF PortWatch daily chokepoint transits
+  publisher: imf
+  dataset: portwatch
+  domain: trade
+  connector: bulk_file
+  dialect: arcgis_hub
+  endpoint: https://hub.arcgis.com/
+  # Weekly, not daily, for two reasons found in session 3 Step 0: the newest date was ten days
+  # behind on 2026-11-06, so a daily pull would mostly re-collect the same days, and a vintage is
+  # about 1.1 M observations (28 chokepoints x 14 measures x every day since 2019).
+  cadence: weekly
+  # editingInfo.lastEditDate on the feature service layer, not the export's own timestamp.
+  change_signal: dataset_version
+  rate_limit: { per_second: 1 }
+  auth_secret: null
+  keep_raw: true
+  expected_staleness_days: 21
+  licence:
+    name: IMF terms of use
+    commercial_ok: "ask"
+    share_alike: false
+    attribution: "Source: IMF PortWatch (portwatch.imf.org), based on AIS vessel movements."
+  options:
+    hub:
+      item_id: 3da2b9ca97684916b75c4013f95d18ab
+      layer: 0
+      service_layer: https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0
+    file_type: csv
+    freq: D
+    date_field: date
+    geo_field: portid
+    label_field: portname
+    # A transit call is one ship crossing the chokepoint boundary, counted once per 48 hours.
+    # The capacity measures are estimated trade volumes in metric tons, from vessel payload
+    # times deadweight tonnage (IMF WP/2021/225), not the ships' maximum capacity.
+    series:
+      n_container: { title: "Container ship transits", unit: "ships per day" }
+      n_dry_bulk: { title: "Dry bulk ship transits", unit: "ships per day" }
+      n_general_cargo: { title: "General cargo ship transits", unit: "ships per day" }
+      n_roro: { title: "Ro-ro ship transits", unit: "ships per day" }
+      n_tanker: { title: "Tanker transits", unit: "ships per day" }
+      n_cargo: { title: "Cargo ship transits, all cargo types", unit: "ships per day" }
+      n_total: { title: "Ship transits, all types", unit: "ships per day" }
+      capacity_container: { title: "Container ship trade volume", unit: "metric tons per day" }
+      capacity_dry_bulk: { title: "Dry bulk trade volume", unit: "metric tons per day" }
+      capacity_general_cargo: { title: "General cargo trade volume", unit: "metric tons per day" }
+      capacity_roro: { title: "Ro-ro trade volume", unit: "metric tons per day" }
+      capacity_tanker: { title: "Tanker trade volume", unit: "metric tons per day" }
+      capacity_cargo: { title: "Cargo trade volume, all cargo types", unit: "metric tons per day" }
+      capacity: { title: "Trade volume, all ship types", unit: "metric tons per day" }

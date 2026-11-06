@@ -1,0 +1,22 @@
+# The yearly collection schedule: 2 January at 05:53 UTC, a day after the year turns.
+#
+# Which sources run is decided by `cadence: yearly` in sources.yaml, not here. The work itself
+# is in collect-cadence.yml.
+
+name: collect yearly
+
+on:
+  schedule:
+    - cron: '53 5 2 1 *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  collect:
+    uses: ./.github/workflows/collect-cadence.yml
+    with:
+      cadence: yearly
+    secrets: inherit

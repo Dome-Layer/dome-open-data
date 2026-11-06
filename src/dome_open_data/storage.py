@@ -112,6 +112,15 @@ class Storage:
             keys.extend(meta["path"] for meta in chunk)
         return sorted(keys)
 
+    async def usage(self, prefix: str = "") -> tuple[int, int]:
+        """Objects and bytes under a prefix, for the weekly storage guard."""
+        objects = total = 0
+        async for chunk in obstore.list(self._store, prefix):
+            for meta in chunk:
+                objects += 1
+                total += int(meta["size"])
+        return objects, total
+
     def duckdb_path(self, key: str) -> str:
         return f"{self._duckdb_root}/{key}"
 

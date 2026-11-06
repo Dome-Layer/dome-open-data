@@ -1,0 +1,128 @@
+# The two failures that make no noise of their own.
+#
+# A source can stop refreshing without anything failing: the last good vintage still answers
+# every query, so silence looks like health. And the R2 free tier is 10 GB, which the first
+# write to a full bucket would discover the hard way. Both are checked here once a week, each
+# with one open issue at a time, and the same job commits a heartbeat so GitHub does not
+# disable these schedules after 60 quiet days.
+
+name: ops weekly
+
+on:
+  schedule:
+    - cron: '37 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the heartbeat commit
+  issues: write     # the freshness and storage alerts
+
+concurrency:
+  group: ops-weekly
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Freshness
+        id: freshness
+        run: |
+          set -uo pipefail
+          python -m dome_open_data freshness | tee /tmp/freshness.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Storage
+        id: storage
+        run: |
+          set -uo pipefail
+          python -m dome_open_data usage | tee /tmp/usage.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Stale sources
+        run: |
+          set -euo pipefail
+          TITLE='open data: sources have stopped refreshing'
+          if [ "${{ steps.freshness.outputs.code }}" = "2" ]; then
+            {
+              echo 'At least one source has not produced a vintage within its own'
+              echo '`expected_staleness_days`. A stale source is not a failed run: collection may'
+              echo 'be succeeding and finding nothing new, or the schedule may not be firing.'
+              echo
+              echo '```'
+              cat /tmp/freshness.txt
+              echo '```'
+              echo
+              echo "Run: $RUN_URL"
+            } > /tmp/stale.md
+            ops/alert.sh open "$TITLE" /tmp/stale.md
+          elif [ "${{ steps.freshness.outputs.code }}" = "0" ]; then
+            ops/alert.sh resolve "$TITLE" "Every source is fresh again: $RUN_URL"
+          else
+            echo "the freshness check itself failed; the job below will fail too"
+          fi
+
+      - name: Storage guard
+        run: |
+          set -euo pipefail
+          TITLE='open data: the bucket is filling up'
+          if [ "${{ steps.storage.outputs.code }}" = "2" ]; then
+            {
+              echo 'The bucket has passed 8 GiB. The R2 free tier stops at 10 GB, so this is the'
+              echo 'moment to decide what to prune (old vintages first: the open question on'
+              echo 'vintage pruning in TOOL_CONTEXT.md) or whether to pay for storage.'
+              echo
+              echo '```'
+              cat /tmp/usage.txt
+              echo '```'
+              echo
+              echo "Run: $RUN_URL"
+            } > /tmp/storage.md
+            ops/alert.sh open "$TITLE" /tmp/storage.md
+          elif [ "${{ steps.storage.outputs.code }}" = "0" ]; then
+            ops/alert.sh resolve "$TITLE" "Back under the line: $RUN_URL"
+          fi
+
+      - name: Heartbeat commit
+        # GitHub disables a scheduled workflow after 60 days without repository activity, and a
+        # workflow run does not count as activity. This repository can easily go that quiet,
+        # which would switch off the very jobs that watch for silence. Same reason as the
+        # keepalive heartbeat in dome-docs.
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          date -u +'%Y-%m-%dT%H:%M:%SZ  weekly ops run' > ops/heartbeat.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ops/heartbeat.txt
+          git diff --staged --quiet || git commit -m 'chore(ops): weekly heartbeat [skip ci]'
+          git push
+
+      - name: Fail the run if a check did
+        run: |
+          set -euo pipefail
+          FRESH=${{ steps.freshness.outputs.code }}
+          STORE=${{ steps.storage.outputs.code }}
+          echo "freshness exit $FRESH, storage exit $STORE"
+          # 2 means the check ran and found something, which the issues above already say.
+          # Anything else means the check itself broke, and that should colour the run red.
+          [ "$FRESH" = "0" ] || [ "$FRESH" = "2" ] || exit 1
+          [ "$STORE" = "0" ] || [ "$STORE" = "2" ] || exit 1

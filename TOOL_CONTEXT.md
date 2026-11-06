@@ -205,6 +205,31 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
 | PWT 11.0 (`ggdc_pwt`) | bulk_file (`pwt`) | dataverse.nl API `api/datasets/:persistentId/?persistentId=doi:10.34894/FABVLR`, file `pwt110.xlsx` (id 554105) via `api/access/datafile/{id}` | Dataverse version (2.0) + file id + checksum | Downloads redirect to SURF object storage (`objectstore.surf.nl`). **No Anubis challenge on 2026-10-21**, from a home connection; the xlsx magic check turns any HTML answer into a failed run, never a workaround. Titles and units from the file's Legend sheet; `i_*` flags and `cor_exp` excluded. 416,285 rows |
 | Maddison 2023 (`ggdc_maddison`) | bulk_file (`maddison`) | Same API, `doi:10.34894/INZBF2`, file `mpd2023_web.xlsx` (id 421302) | Dataverse version (1.0) + file id + checksum | Sheet `Full data`, years from 1 AD to 2022 (period `0001-01-01` is valid). Historical codes `CSK`, `SUN`, `YUG`; `SDN` is former Sudan. When fewer than 12 countries are shown, the original papers must be cited (in the attribution). 39,241 rows |
 
+### Session 3 Step 0: IMF PortWatch chokepoints (verified 2026-11-06)
+
+The only new source in session 3. Verified live before any connector was written.
+
+- **Service:** `https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0`,
+  an ArcGIS **Table** (no geometry), owner `IMF-portwatch_imf_dataviz`. Found through the ArcGIS Hub
+  dataset API, not guessed: the org id in a guessed URL answers `Invalid URL`.
+- **Shape:** 79,940 rows on 2026-11-06, 21 fields: `date` (DateOnly), `year`, `month`, `day`,
+  `portid`, `portname`, then `n_*` vessel counts and `capacity_*` values by vessel class, plus
+  `ObjectId`. `maxRecordCount` 1000, `supportsPagination` and `supportsOrderBy` true.
+- **Coverage:** `date` runs 2019-01-01 to **2026-10-25**, so the daily series lags about ten days.
+  An `expected_staleness_days` of 7 would cry wolf; 21 is the realistic setting.
+- **The quota is the real constraint.** The service enforces the IMF org's own limit of 6,000
+  request units a minute, shared across every consumer, and it was **already over quota on
+  2026-11-06** with no load from here (6,256 to 6,694 units reported on four separate attempts,
+  minutes apart). Paged reads could not be exercised live for that reason, twice.
+- **A 429 arrives as HTTP 200** with `{"error": {"code": 429, ...}}` in the body, exactly like the
+  World Bank's 200 errors. Any connector here has to parse the body and raise, never trust the status.
+- **A bulk CSV export exists** for the same table through ArcGIS Hub:
+  `https://hub.arcgis.com/api/download/v1/items/3da2b9ca97684916b75c4013f95d18ab/csv?layers=0`.
+  On 2026-11-06 it answered **202** with `{"status": "PagingData", "progressInPercent": 5}`, meaning
+  the Hub was regenerating it; a 200 carries the finished file. One request per vintage instead of
+  eighty, and the Hub does the paging against the quota on its own side.
+- **Licence:** IMF terms, so `commercial_ok: ask`, like the other IMF sources.
+
 ---
 
 ## Known limitations
@@ -225,12 +250,20 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
   one connect timeout on a download. If a challenge ever appears the run fails cleanly and the
   fallback is a manual local run, not a workaround.
 - Pink Sheet `Monthly Indices` and IMF ER end-of-period rates: not collected yet.
+- PortWatch chokepoints: `rest` with ArcGIS paging as the sprint specifies, or `bulk_file`
+  on the Hub CSV export? The quota findings above favour the export (one request, 202 means
+  "not ready" and the next schedule picks it up); paging is 80 requests into a limit that is
+  already saturated by other consumers. Francesco decides; the sprint brief says `rest`.
 - Gate 3: monetisation direction, licence recheck, and whether this appears on domelayer.com.
 
 ---
 
 ## Changelog
 
+- **2026-11-06 (session 3 Step 0):** repo clean at `b19ed52`, no open PRs. Sprint drift fixed in
+  `dome-docs` (`d5ca1f3`). IMF PortWatch chokepoints verified live: service URL, 21 fields, 79,940
+  rows, 2019-01-01 to 2026-10-25, 1000-row pages, a shared quota that was already exceeded, 429 as
+  HTTP 200, and a Hub CSV export as the alternative. Details above.
 - **2026-10-21 (session 2 landed):** #4 merged (`d9c5dc7`). One `collect` dispatch per new source from Actions: all eight collected and verified in R2 at the same row counts as the local runs (ecb_policy_rates 186, ecb_fx 263,338, imf_weo 177,804, imf_er 171,450, worldbank_pinksheet 50,451, un_wpp 843,486, ggdc_pwt 416,285, ggdc_maddison 39,241). dataverse.nl served the runner real files, no challenge. Maddison's first run failed on a connect timeout to the file download (run 39577297911, a clean failure, nothing stored but the failed run row); the retry passed (run 39577678303).
 - **2026-10-21 (session 2):** `sdmx` connector (dialects `imf`, `ecb`) and `bulk_file` connector (fixed URL, link discovered on a page, dataverse dataset; dialects `pinksheet`, `wpp`, `pwt`, `maddison`) with a magic-byte guard. Eight new registry entries: `imf_weo`, `imf_er`, `ecb_policy_rates`, `ecb_fx`, `worldbank_pinksheet`, `un_wpp`, `ggdc_pwt`, `ggdc_maddison`. Country crosswalk (246 countries incl. historical, 126 aggregates) and its builder. Each source collected locally end to end, verified, and a second run wrote nothing (change detection). R2 landing waits for the merge.
 - **2026-10-21 (session 1 closed):** "Done when" met. A local run landed vintage 2026-10-20 and a forced `collect` dispatch from Actions landed 2026-10-21 (run 39562732321); both verified at 759,559 rows. R2 refused a deliberate overwrite (create-only writes hold on the real bucket). The R2 token was rolled after its value was printed in an error; credential values are now shape-checked before any request.

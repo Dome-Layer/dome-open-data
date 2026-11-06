@@ -303,6 +303,17 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
+- **2026-11-06 (session 3 verified from `main`):** the "done when" is met, by dispatch.
+  `ops weekly` opened **one** issue (#8) with the freshness report; `collect daily` collected
+  `ecb_fx` vintage 2026-11-06 (263,686 clean rows, 44 series, verified, through the new gate) so it
+  stopped being stale; a deliberate break of `ecb_policy_rates` on a throwaway branch ran **both**
+  weekly jobs independently and opened **one issue per source** (#9 broken, #10 PortWatch), no pile;
+  the same workflow from `main` then **closed #9** with a "Collected again" comment (an `unchanged`
+  run, so nothing was written and the 2026-10-21 vintage was re-verified) while **commenting on #10
+  instead of opening another**; a second `ops weekly` **commented on #8** and the stale list had
+  shrunk from two sources to one. The first dispatch had failed on `bash -e` swallowing the check's
+  exit code (#7). Still open and expected: #8 and #10, both about `imf_portwatch`, until the Hub
+  export recovers.
 - **2026-11-06 (session 3):** cadence schedules, the vintage gate, one issue per subject, the
   weekly freshness and storage checks, the heartbeat, and the `arcgis_hub` dialect with the
   `imf_portwatch` entry. `ruff`, `mypy` and 86 tests green. Verified live: `freshness` against R2

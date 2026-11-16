@@ -287,6 +287,11 @@ schedules; `collect.yml` stays for collecting one source on demand.
 ## Open questions
 
 - Vintage pruning: keep every vintage forever, or thin old ones (for example monthly after a year)?
+- **Do `un_wpp` and `ggdc_pwt` change tokens flap?** Both collected on 2026-11-16 with row
+  counts identical to their 2026-10-21 vintages (843,486 and 416,285), so the publisher's
+  signal moved while the data did not: an ETag for WPP, a Dataverse version plus checksum for
+  PWT. At a yearly cadence that costs one duplicate vintage, so it is not urgent, but if it
+  repeats on 2 January the signal needs a closer look (content hash rather than ETag).
 - Licence for the public code (none chosen yet, which means all rights reserved).
 - Full WDI (all 1,498 indicators): via REST with `keep_raw: false`, or the bulk zip as a `bulk_file` source?
 - dataverse.nl from GitHub runners: no challenge on 2026-10-21 (both files downloaded from a runner);
@@ -305,6 +310,17 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
+- **2026-11-16 (alerting rule, #12 `7e96c3b`):** an issue now means "something is broken", not "a
+  publisher had a bad minute". After a failed run, `alert-check` reads the source's own run history:
+  a daily source is given one failure (its next attempt is hours away), slower cadences none, and a
+  stale source alerts whatever its cadence. The retry window stays at four attempts on purpose.
+  Unchanged runs now write their own row, so the history has no holes for the rule to miscount.
+  **Proved live within the hour, by accident:** a `collect yearly` dispatch hit a dataverse.nl
+  connect timeout on `ggdc_maddison`, the rule said "alert: 1 failed run in a row" (yearly, no
+  grace), **issue #13 opened carrying that reason**, the next dispatch collected 39,241 rows and
+  **#13 closed itself**. In the same two runs `un_wpp` and `ggdc_pwt` reported `unchanged` and left
+  their rows, which is the new behaviour working in production. `ecb_fx`'s #11 stays open until its
+  next successful daily run; under this rule its 15 November blip would never have opened it.
 - **2026-11-16 (ten days unattended):** nothing was dispatched by hand. Nine daily runs (seven
   vintages for `ecb_fx`, two `unchanged` over the weekend because the ECB publishes no weekend fix,
   one failure), one weekly run in which **`imf_portwatch` collected 1,121,904 rows and 392 series**

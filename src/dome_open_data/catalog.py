@@ -7,6 +7,7 @@ import re
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -81,6 +82,24 @@ async def write_run(storage: Storage, run: RunRecord) -> None:
     # suffix keeps two writers apart even within one microsecond.
     name = f"run={datetime.now(UTC):%Y%m%dT%H%M%S%fZ}-{uuid.uuid4().hex[:8]}.parquet"
     await storage.put_new(f"{runs_prefix(run.source_id)}{name}", parquet_bytes(table))
+
+
+async def recent_runs(storage: Storage, source_id: str, limit: int = 5) -> list[dict[str, Any]]:
+    """The newest run records for a source, newest first.
+
+    Key order is write order (the name carries microseconds), so reading the tail backwards is
+    the run history without listing anything else.
+    """
+    keys = [k for k in await storage.list_keys(runs_prefix(source_id)) if k.endswith(".parquet")]
+    rows: list[dict[str, Any]] = []
+    for key in reversed(keys):
+        if len(rows) >= limit:
+            break
+        data = await storage.get(key)
+        if data is None:
+            continue
+        rows.extend(pq.read_table(io.BytesIO(data)).to_pylist())
+    return rows[:limit]
 
 
 async def last_collected_token(storage: Storage, source_id: str) -> str | None:

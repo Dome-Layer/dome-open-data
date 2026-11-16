@@ -2,8 +2,13 @@
 #
 # The matrix is read from sources.yaml at run time rather than written out here: a registry
 # entry is the only place a source is declared, so adding one must not mean remembering to edit
-# a workflow. `fail-fast: false` keeps one broken publisher from cancelling the others, and each
-# job opens or updates that source's own issue, so a failure is never silent and never a pile.
+# a workflow. `fail-fast: false` keeps one broken publisher from cancelling the others.
+#
+# A failure is never silent: the job is red and a failed row goes into catalog/runs/. Whether a
+# human is TOLD is decided by `alert-check`, which tolerates a single blip on a daily source
+# (the next attempt is hours away) but never on a slower one, and never when the source has
+# already gone stale. An issue should mean "something is broken", not "a publisher had a bad
+# minute": one that fires on every blip teaches its owner to ignore the label.
 
 name: collect-cadence
 
@@ -82,8 +87,18 @@ jobs:
       - name: Verify latest vintage
         run: python -m dome_open_data verify "$SOURCE"
 
-      - name: Open or update this source's issue
+      - name: Does this failure need a human?
+        id: alert
         if: failure()
+        run: |
+          # `bash -e` again: exit 2 is the answer, not a crash.
+          set +e
+          python -m dome_open_data alert-check "$SOURCE" | tee /tmp/why.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Open or update this source's issue
+        if: failure() && steps.alert.outputs.code == '2'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -95,8 +110,13 @@ jobs:
             echo "Run: $RUN_URL"
             echo
             echo "Nothing was written: a failed run leaves the previous vintage in place and"
-            echo "records a failed row in \`catalog/runs/source=$SOURCE/\`. The next scheduled"
-            echo "run will try again, so this needs a human only if it keeps happening."
+            echo "records a failed row in \`catalog/runs/source=$SOURCE/\`."
+            echo
+            echo "Why this one was worth telling you about:"
+            echo
+            echo '```'
+            cat /tmp/why.txt
+            echo '```'
           } > /tmp/alert.md
           ops/alert.sh open "open data: $SOURCE is failing" /tmp/alert.md
 

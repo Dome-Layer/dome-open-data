@@ -130,14 +130,26 @@ def test_verify_catches_a_tampered_clean_file(storage: Storage, tmp_path: Path) 
         sync(verify_source(make_source(), storage))
 
 
-def test_unchanged_source_writes_nothing(storage: Storage) -> None:
+def test_unchanged_source_writes_no_data(storage: Storage) -> None:
+    """An unchanged run adds its own row to the run log and nothing else.
+
+    Session 3 changed this: the run log holds one row per run, as the sprint brief asks, so that
+    the alert rule can count consecutive failures without a success hiding between them. No raw,
+    clean, series or manifest object is written, which is the property that matters.
+    """
     api = FakeWorldBank()
     collect(api, storage)
     before = keys(storage)
     result = collect(api, storage, vintage=DAY_2)
     assert result.status == "unchanged"
-    assert keys(storage) == before
     assert api.requests[-1] == "sources/2"
+
+    added = [key for key in keys(storage) if key not in before]
+    assert len(added) == 1, added
+    assert added[0].startswith("catalog/runs/source=worldbank_wdi/run=")
+    assert [key for key in keys(storage) if not key.startswith("catalog/runs/")] == [
+        key for key in before if not key.startswith("catalog/runs/")
+    ]
 
 
 def test_changed_catalogue_date_collects_a_new_vintage(storage: Storage) -> None:

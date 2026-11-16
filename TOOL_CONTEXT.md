@@ -303,6 +303,18 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
+- **2026-11-16 (ten days unattended):** nothing was dispatched by hand. Nine daily runs (seven
+  vintages for `ecb_fx`, two `unchanged` over the weekend because the ECB publishes no weekend fix,
+  one failure), one weekly run in which **`imf_portwatch` collected 1,121,904 rows and 392 series**
+  after the Hub export recovered by itself, and one ops weekly that found everything fresh, closed
+  issue #8 and committed the heartbeat (`dd057e7`). Alerting behaved: **#10 closed itself** on the
+  PortWatch recovery, **#11 opened** when the **ECB answered 503 on all four attempts** on
+  15 November. That failure is upstream and transient (200 in 0.8 s the next morning), so **no fix
+  was applied**: widening the retry window would hide exactly the flakiness Gate 1 measures, and the
+  next scheduled run collects the same series. Store 250 objects, 0.09 GiB. **Gate 1 counts the nine
+  sources that were refreshing (Francesco, 2026-11-16); PortWatch is tracked, not gating.**
+  Scheduler note: runs land **6 to 8 hours after their cron**, which is best-effort scheduling on a
+  public repository and harmless at these cadences.
 - **2026-11-06 (session 3 verified from `main`):** the "done when" is met, by dispatch.
   `ops weekly` opened **one** issue (#8) with the freshness report; `collect daily` collected
   `ecb_fx` vintage 2026-11-06 (263,686 clean rows, 44 series, verified, through the new gate) so it

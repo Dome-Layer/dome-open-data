@@ -276,7 +276,9 @@ schedules; `collect.yml` stays for collecting one source on demand.
 - GitHub's scheduler is best effort: runs can start late or be skipped under load. Fine for daily or slower data; not suitable for intraday.
 - The free tier caps the store at about 10 GB, so gridded climate data is stored as aggregates only, and large sources need `keep_raw: false` or a curated selection (see WDI).
 - Licence fields are recorded by hand from each source's terms; they are a guide, not legal advice.
-- `catalog/runs/` gains one small file per collected or failed run; compact it if it ever grows large.
+- `catalog/runs/` gains one small file per run, including runs that found nothing new (one row per
+  run, as the sprint brief asks, and what the alert rule counts). About 3,700 small objects a year
+  at the current cadences; compact it if that ever matters.
 - `imf_portwatch` depends on ArcGIS Hub regenerating its CSV export. That is outside this
   pipeline's control, and it was broken when the source was added (see Open questions).
 

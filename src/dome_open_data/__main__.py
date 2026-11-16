@@ -6,7 +6,7 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from dome_open_data import logs, ops
+from dome_open_data import catalog, logs, ops
 from dome_open_data.config import load_env_file
 from dome_open_data.http import new_client
 from dome_open_data.registry import Source, load_registry
@@ -70,6 +70,28 @@ async def _usage(args: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
+async def _alert_check(args: argparse.Namespace) -> None:
+    """After a failed run: exit 2 if a human should be told, 0 if the schedule will sort it out.
+
+    Anything unexpected here exits 2 as well. A monitor that goes quiet when it cannot read its
+    own history is worse than one that cries wolf.
+    """
+    source = _source(args)
+    storage = _storage(args)
+    try:
+        runs = await catalog.recent_runs(storage, source.id, limit=5)
+        statuses = [str(row["status"]) for row in runs]
+        report = await ops.freshness(storage, [source], datetime.now(UTC).date())
+        decision = ops.should_alert(statuses, source.cadence, report[0].stale)
+    except Exception as exc:  # noqa: BLE001
+        print(f"alert: could not read the run history ({type(exc).__name__}: {exc})")
+        raise SystemExit(2) from None
+    print(f"{'alert' if decision.alert else 'quiet'}: {decision.reason}")
+    print(f"recent runs, newest first: {', '.join(statuses) or 'none'}")
+    if decision.alert:
+        raise SystemExit(2)
+
+
 async def _verify(args: argparse.Namespace) -> None:
     vintage = date.fromisoformat(args.vintage) if args.vintage else None
     await verify_source(_source(args), _storage(args), vintage)
@@ -91,6 +113,12 @@ def main(argv: list[str] | None = None) -> int:
 
     usage = commands.add_parser("usage", help="objects and bytes in the bucket")
     usage.add_argument("--local-dir", help="read a local folder instead of R2")
+
+    alert = commands.add_parser(
+        "alert-check", help="after a failed run: does it need a human? exit 2 means yes"
+    )
+    alert.add_argument("source")
+    alert.add_argument("--local-dir", help="read a local folder instead of R2")
 
     run = commands.add_parser("run", help="collect one source")
     run.add_argument("source")
@@ -123,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         "crosswalk": _crosswalk,
         "freshness": _freshness,
         "usage": _usage,
+        "alert-check": _alert_check,
     }
     try:
         asyncio.run(commands_run[args.command](args))

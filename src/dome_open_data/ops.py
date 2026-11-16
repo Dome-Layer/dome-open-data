@@ -6,7 +6,7 @@ last good vintage still answers every query, and the free bucket can fill up unt
 write fails. Both are caught here on a weekly schedule.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -58,6 +58,50 @@ class Usage:
             f"{state} {self.objects} objects, {self.total_bytes / GIB:.2f} GiB "
             f"(alert at {STORAGE_ALERT_BYTES / GIB:.0f} GiB, free tier 10 GB)"
         )
+
+
+# How many consecutive failed runs a source is allowed before a human is told. A single blip is
+# only worth absorbing where the next attempt comes within a day; a weekly or yearly source gets
+# no grace, because its next attempt is a week or a year away.
+ALERT_AFTER_FAILURES = {"daily": 2, "weekly": 1, "monthly": 1, "yearly": 1}
+
+
+@dataclass(frozen=True, slots=True)
+class AlertDecision:
+    alert: bool
+    reason: str
+
+
+def should_alert(statuses: Sequence[str], cadence: str, stale: bool) -> AlertDecision:
+    """Whether a failed run deserves an issue, given what the run log says came before it.
+
+    The failure itself is never hidden: the job is red in Actions and a failed row is in
+    `catalog/runs/`. What this decides is whether a human is told, and the answer should mean
+    "something is broken", not "a publisher had a bad minute". An issue that opens for every
+    upstream blip trains its owner to ignore the label, which costs more than the blip.
+
+    Two things override the grace: a source that is already stale (the data is genuinely missing,
+    not merely late), and a cadence slow enough that the next attempt is far away.
+    """
+    if stale:
+        return AlertDecision(True, "the newest vintage is already older than the source allows")
+    needed = ALERT_AFTER_FAILURES.get(cadence, 1)
+    consecutive = 0
+    for status in statuses:
+        if status != "failed":
+            break
+        consecutive += 1
+    if consecutive >= needed:
+        return AlertDecision(
+            True, f"{consecutive} failed {'run' if consecutive == 1 else 'runs'} in a row"
+        )
+    if consecutive == 0:
+        return AlertDecision(False, "the newest run did not fail")
+    return AlertDecision(
+        False,
+        f"{consecutive} failed run so far, and a {cadence} source is given {needed} in a row "
+        "before anyone is told",
+    )
 
 
 async def freshness(storage: Storage, sources: Iterable[Source], today: date) -> list[Freshness]:

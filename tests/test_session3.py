@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from dome_open_data import ops
+from dome_open_data import catalog, ops
 from dome_open_data.connectors.bulk import hub_date, number
 from dome_open_data.http import SourceError, new_client
 from dome_open_data.ops import STORAGE_ALERT_BYTES, Freshness, Usage
@@ -344,3 +344,65 @@ def test_hub_dates_in_every_shape_the_hub_writes(text: str, expected: date | Non
 )
 def test_numbers_that_are_not_numbers_are_dropped(cell: str | None, expected: float | None) -> None:
     assert number(cell) == expected
+
+
+# --- Whether a failure deserves a human --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("statuses", "cadence", "stale", "alert"),
+    [
+        # A daily source gets one blip for free: the next attempt is hours away.
+        (["failed", "collected"], "daily", False, False),
+        (["failed", "failed"], "daily", False, True),
+        (["failed", "unchanged", "failed"], "daily", False, False),
+        # Slower cadences get no grace, because the next attempt is a week or a year away.
+        (["failed", "collected"], "weekly", False, True),
+        (["failed"], "monthly", False, True),
+        (["failed"], "yearly", False, True),
+        # Stale overrides everything: the data is missing, not merely late.
+        (["failed", "collected"], "daily", True, True),
+        ([], "daily", True, True),
+        # Nothing wrong, nothing said.
+        (["collected"], "daily", False, False),
+    ],
+)
+def test_only_a_real_problem_opens_an_issue(
+    statuses: list[str], cadence: str, stale: bool, alert: bool
+) -> None:
+    assert ops.should_alert(statuses, cadence, stale).alert is alert
+
+
+def test_the_decision_says_why() -> None:
+    quiet = ops.should_alert(["failed", "collected"], "daily", False)
+    assert "a daily source is given 2 in a row" in quiet.reason
+    assert ops.should_alert(["collected"], "daily", False).reason == "the newest run did not fail"
+    assert "2 failed runs in a row" in ops.should_alert(["failed", "failed"], "daily", False).reason
+    assert "older than the source allows" in ops.should_alert([], "daily", True).reason
+
+
+def test_an_unchanged_run_is_recorded_so_the_history_has_no_holes(storage: Storage) -> None:
+    source = portwatch_source()
+    collect(hub_publisher(), storage, source)
+    collect(hub_publisher(), storage, source, vintage=DAY_2)  # same token: unchanged
+
+    runs = sync(catalog.recent_runs(storage, source.id, limit=5))
+    assert [row["status"] for row in runs] == ["unchanged", "collected"]
+    # The unchanged run wrote no data, only its own row.
+    assert sync(storage.get(clean_key(source, DAY_2))) is None
+
+
+def test_a_failed_run_is_the_newest_row(storage: Storage) -> None:
+    source = portwatch_source()
+    collect(hub_publisher(), storage, source)
+    pending = httpx.Response(
+        202,
+        text=json.dumps({"status": "PagingData", "progressInPercent": 5}),
+        headers={"content-type": "application/json"},
+    )
+    with pytest.raises(SourceError):
+        collect(hub_publisher(last_edit=1793715299999, export=pending), storage, source, DAY_2)
+
+    runs = sync(catalog.recent_runs(storage, source.id, limit=5))
+    assert [row["status"] for row in runs] == ["failed", "collected"]
+    assert ops.should_alert([r["status"] for r in runs], source.cadence, False).alert is True

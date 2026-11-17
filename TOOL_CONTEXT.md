@@ -92,7 +92,9 @@ matrix jobs never read-modify-write the same object. Read with a glob and
 `hive_partitioning = true`.
 
 ### Run semantics
-- **Unchanged** change token: the run exits and writes nothing, not even a run row (the Actions log shows it).
+- **Unchanged** change token: no raw, manifest, clean or catalog data is written, but the run still
+  writes an `unchanged` run row, so the run history has no holes (since #12, 2026-11-16: the
+  alert check reads that history, and a missing row cannot be told apart from a missing run).
 - **Collected:** raw files, manifest, clean file, catalog entries, then a `collected` run row.
 - **Failed:** whatever raw was written stays (it is the record of what the source sent); the clean
   write is skipped; a `failed` run row records the error.

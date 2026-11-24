@@ -84,7 +84,10 @@ async def run_source(
     try:
         token = await connector.change_token(client, source)
         if not force and token == await catalog.last_collected_token(storage, source.id):
-            log.info("unchanged, nothing written", extra={"source": source.id, "token": token})
+            log.info(
+                "unchanged, no data written, run row only",
+                extra={"source": source.id, "token": token},
+            )
             # No raw or clean object is written, but the attempt is recorded: without it the run
             # history reads as two failures in a row when a success sat between them, and the
             # alert rule counts consecutive failures.

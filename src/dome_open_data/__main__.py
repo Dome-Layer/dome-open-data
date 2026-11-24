@@ -6,7 +6,7 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from dome_open_data import catalog, logs, ops
+from dome_open_data import catalog, ledger, logs, ops
 from dome_open_data.config import load_env_file
 from dome_open_data.http import new_client
 from dome_open_data.registry import Source, load_registry
@@ -92,6 +92,27 @@ async def _alert_check(args: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
+async def _ledger(args: argparse.Namespace) -> None:
+    """Assemble the public ledger and write it to `public/ledger.json`.
+
+    Called at the end of the collect workflows and the ops weekly workflow, so the published page
+    is never more than one run behind. It reads the catalog only: no observation value is touched.
+    """
+    storage = _storage(args)
+    sources = list(load_registry(Path(args.registry)).values())
+    built = await ledger.build(storage, sources, datetime.now(UTC).date())
+    if args.print:
+        print(ledger.serialise(built).decode("utf-8"))
+        return
+    written = await ledger.write(storage, built)
+    totals = built["totals"]
+    print(
+        f"{ledger.LEDGER_KEY}: {written:,} bytes, {totals['sources']} sources, "
+        f"{totals['stale']} stale, {totals['vintages']} vintages, "
+        f"{totals['series']:,} series, as of {built['as_of']}"
+    )
+
+
 async def _verify(args: argparse.Namespace) -> None:
     vintage = date.fromisoformat(args.vintage) if args.vintage else None
     await verify_source(_source(args), _storage(args), vintage)
@@ -125,6 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--force", action="store_true", help="ignore the change signal")
     run.add_argument("--local-dir", help="write to a local folder instead of R2")
 
+    led = commands.add_parser("ledger", help="assemble public/ledger.json for the ledger page")
+    led.add_argument("--local-dir", help="read and write a local folder instead of R2")
+    led.add_argument(
+        "--print", action="store_true", help="print the JSON instead of writing it to the store"
+    )
+
     verify = commands.add_parser("verify", help="recount a vintage from raw and via DuckDB")
     verify.add_argument("source")
     verify.add_argument("--vintage", help="YYYY-MM-DD, default the newest")
@@ -152,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         "freshness": _freshness,
         "usage": _usage,
         "alert-check": _alert_check,
+        "ledger": _ledger,
     }
     try:
         asyncio.run(commands_run[args.command](args))

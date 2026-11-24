@@ -109,6 +109,11 @@ jobs:
             ops/alert.sh resolve "$TITLE" "Back under the line: $RUN_URL"
           fi
 
+      - name: Publish the ledger
+        # Unguarded on purpose: a week in which a source went stale is a week the public page
+        # has to show. It is also the backstop that refreshes the page when no collection ran.
+        run: python -m dome_open_data ledger
+
       - name: Heartbeat commit
         # GitHub disables a scheduled workflow after 60 days without repository activity, and a
         # workflow run does not count as activity. This repository can easily go that quiet,

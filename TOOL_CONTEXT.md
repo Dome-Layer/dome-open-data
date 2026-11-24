@@ -84,6 +84,7 @@ clean/{domain}/{publisher}__{dataset}/vintage=YYYY-MM-DD/part-0.parquet
 catalog/sources/source={id}/part-0.parquet                          registry entry incl. licence (current)
 catalog/series/source={id}/part-0.parquet                           title, definition, unit per series_id (current)
 catalog/runs/source={id}/run=<UTC write time, us>-<suffix>.parquet    one file per run, append only
+public/ledger.json                                                  the ledger page's data (metadata only)
 ```
 Raw and clean objects are written with a create-only put (`If-None-Match`), so an existing vintage
 can never be overwritten. **Deviation from the brief:** `catalog/` is partitioned per source
@@ -100,6 +101,32 @@ matrix jobs never read-modify-write the same object. Read with a glob and
   write is skipped; a `failed` run row records the error.
 - The change token of the last `collected` run is the comparison point, so a failed run is retried
   on the next schedule.
+
+### The public ledger (`public/ledger.json`)
+
+The one object in this bucket that leaves it. The collector assembles it with
+`python -m dome_open_data ledger` at the end of every collect run (one job per workflow run, not
+one per source) and of every ops weekly run; the website Worker reads that single key through a
+read-only R2 binding and renders `domelayer.com/dome/open-data`. Decided 2026-11-17; rejected were
+a Parquet read from the Worker (10 ms CPU) and committing the JSON to the public repository.
+
+**It carries metadata, counts and provenance, and never an observation value.** That is what keeps
+the bucket private and what makes the `commercial_ok: ask` licences irrelevant to it: those
+restrict redistributing the data, not the fact that we collect it. Per source: id, publisher,
+dataset, domain, endpoint, cadence, newest and first vintage, vintages held, age against
+`expected_staleness_days`, series and row counts, the licence block, and the last five run rows
+(status, times, vintage, rows, error). Plus store totals and an `as_of`.
+
+Two rules the code enforces, both in `tests/test_ledger.py`:
+
+- **Failures are published.** A failed run, a stale source and a source that has never collected
+  all appear as they are. A page that hid them would be worthless as evidence.
+- **An error message is redacted before it is published.** `ledger.public_error` strips the value
+  of any `api_key`, `key`, `token`, `secret`, `password`, `auth` or `signature` query parameter and
+  caps the text at 300 characters. No source needs a key today; FRED does, and Phase 2 adds it.
+
+`run_history_complete_from` is published too, because unchanged runs wrote no row before #12
+(2026-11-16): without it a reader would count the gaps as missed runs.
 
 ### Common time-series model
 `series_id · geo (ISO alpha-3) · period (start date) · freq · value · unit · obs_status · vintage`.

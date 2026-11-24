@@ -34,6 +34,8 @@ python -m dome_open_data run worldbank_wdi --local-dir data/local   # into a loc
 python -m dome_open_data run worldbank_wdi                          # into R2 (reads .env)
 python -m dome_open_data verify worldbank_wdi                       # recount newest vintage
 python -m dome_open_data crosswalk                                  # rebuild crosswalk/*.csv
+python -m dome_open_data ledger --print                             # the public ledger, to stdout
+python -m dome_open_data ledger                                     # write public/ledger.json
 ```
 
 `run` checks the source's change signal first and exits without writing anything when it is

@@ -9,7 +9,7 @@ from typing import Any
 import pyarrow.parquet as pq
 import pytest
 
-from dome_open_data import crosswalk
+from dome_open_data import alfred, crosswalk
 from dome_open_data.connectors import connector_for
 from dome_open_data.http import SourceError, new_client
 from dome_open_data.model import parse_sdmx_period
@@ -328,6 +328,10 @@ def test_dataverse_without_the_file_fails(storage: Storage) -> None:
 
 def test_every_registry_source_has_a_connector() -> None:
     for source in load_registry(ROOT / "sources.yaml").values():
+        if source.connector == "alfred":
+            # Many vintages per run, dated by the publisher: collected by alfred.run_alfred.
+            assert alfred.codes(source)
+            continue
         connector_for(source)
 
 

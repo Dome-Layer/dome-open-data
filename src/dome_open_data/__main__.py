@@ -6,7 +6,7 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from dome_open_data import catalog, ledger, logs, ops
+from dome_open_data import alfred, catalog, ledger, logs, ops
 from dome_open_data.config import load_env_file
 from dome_open_data.http import new_client
 from dome_open_data.registry import Source, load_registry
@@ -30,9 +30,23 @@ def _source(args: argparse.Namespace) -> Source:
 
 
 async def _run(args: argparse.Namespace) -> None:
+    source = _source(args)
+    if source.connector == "alfred":
+        # Dated by the publisher, so --force means nothing here: a run fetches what is new.
+        async with new_client() as client:
+            result = await alfred.run_alfred(
+                source,
+                _storage(args),
+                client,
+                only=args.series or None,
+                max_new=args.max_new,
+                recheck=args.recheck,
+            )
+        print(f"{source.id}: {result.status}, {result.new} new publication dates")
+        return
     async with new_client() as client:
         await run_source(
-            _source(args),
+            source,
             _storage(args),
             client,
             vintage=datetime.now(UTC).date(),
@@ -99,12 +113,12 @@ async def _ledger(args: argparse.Namespace) -> None:
     is never more than one run behind. It reads the catalog only: no observation value is touched.
     """
     storage = _storage(args)
-    sources = list(load_registry(Path(args.registry)).values())
-    built = await ledger.build(storage, sources, datetime.now(UTC).date())
+    registry = load_registry(Path(args.registry))
+    built = await ledger.build(storage, list(registry.values()), datetime.now(UTC).date())
     if args.print:
         print(ledger.serialise(built).decode("utf-8"))
         return
-    written = await ledger.write(storage, built)
+    written = await ledger.write(storage, built, registry)
     totals = built["totals"]
     print(
         f"{ledger.LEDGER_KEY}: {written:,} bytes, {totals['sources']} sources, "
@@ -114,8 +128,16 @@ async def _ledger(args: argparse.Namespace) -> None:
 
 
 async def _verify(args: argparse.Namespace) -> None:
+    source = _source(args)
+    if source.connector == "alfred":
+        checked = await alfred.verify_alfred(source, _storage(args), args.series or None)
+        print(
+            f"{source.id}: {checked.series} series, {checked.publication_dates} publication "
+            f"dates, {checked.rows:,} rows, every hash and count matches"
+        )
+        return
     vintage = date.fromisoformat(args.vintage) if args.vintage else None
-    await verify_source(_source(args), _storage(args), vintage)
+    await verify_source(source, _storage(args), vintage)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -145,6 +167,18 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("source")
     run.add_argument("--force", action="store_true", help="ignore the change signal")
     run.add_argument("--local-dir", help="write to a local folder instead of R2")
+    run.add_argument(
+        "--series", action="append", help="ALFRED only: collect just this series (repeatable)"
+    )
+    run.add_argument(
+        "--max-new", type=int, help="ALFRED only: cap on new publication dates this run"
+    )
+    run.add_argument(
+        "--recheck",
+        choices=["none", "latest", "all"],
+        default="latest",
+        help="ALFRED only: which held publication dates to fetch again and hash-check",
+    )
 
     led = commands.add_parser("ledger", help="assemble public/ledger.json for the ledger page")
     led.add_argument("--local-dir", help="read and write a local folder instead of R2")
@@ -156,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("source")
     verify.add_argument("--vintage", help="YYYY-MM-DD, default the newest")
     verify.add_argument("--local-dir", help="read a local folder instead of R2")
+    verify.add_argument("--series", action="append", help="ALFRED only: just this series")
 
     commands.add_parser("crosswalk", help="rebuild crosswalk/countries.csv and aggregates.csv")
 

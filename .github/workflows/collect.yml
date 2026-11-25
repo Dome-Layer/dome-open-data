@@ -16,6 +16,15 @@ on:
         description: Collect even if the change signal is unchanged
         type: boolean
         default: false
+      series:
+        description: ALFRED only, optional. One series code (for example GDPC1) to backfill alone
+        required: false
+        default: ''
+      recheck:
+        description: ALFRED only. Held publication dates to fetch again and hash-check
+        type: choice
+        options: [latest, none, all]
+        default: latest
 
 permissions:
   contents: read
@@ -27,11 +36,14 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # An ALFRED backfill is one run: about 2.5 requests a second, so 1,500 dates in ~15 min.
+    timeout-minutes: 60
     env:
       PYTHONPATH: src
       SOURCE: ${{ inputs.source }}
       FORCE: ${{ inputs.force }}
+      SERIES: ${{ inputs.series }}
+      RECHECK: ${{ inputs.recheck }}
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -47,10 +59,16 @@ jobs:
         run: pip install -r requirements.txt
       - name: Collect
         run: |
-          if [ "$FORCE" = "true" ]; then
-            python -m dome_open_data run "$SOURCE" --force
+          set -euo pipefail
+          ARGS=(run "$SOURCE" --recheck "$RECHECK")
+          if [ "$FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$SERIES" ]; then ARGS+=(--series "$SERIES"); fi
+          python -m dome_open_data "${ARGS[@]}"
+      - name: Verify
+        run: |
+          set -euo pipefail
+          if [ -n "$SERIES" ]; then
+            python -m dome_open_data verify "$SOURCE" --series "$SERIES"
           else
-            python -m dome_open_data run "$SOURCE"
+            python -m dome_open_data verify "$SOURCE"
           fi
-      - name: Verify latest vintage
-        run: python -m dome_open_data verify "$SOURCE"

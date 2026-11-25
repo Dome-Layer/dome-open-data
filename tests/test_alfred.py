@@ -423,6 +423,36 @@ def test_the_registry_entry_is_public_domain_and_daily() -> None:
     assert entry.connector == "alfred"
     assert entry.cadence == "daily"
     assert entry.licence.commercial_ok == "yes"
-    assert alfred.codes(entry)[0] == "GDPC1"
+    assert alfred.codes(entry) == ["GDPC1", "PAYEMS", "UNRATE", "CPIAUCSL", "INDPRO", "PCEPI"]
+    assert all(s["copyright"] == "none" and s["checked"] for s in entry.options["series"])
+    for publisher in {s["publisher"] for s in entry.options["series"]}:
+        named = {"BEA": "Economic Analysis", "BLS": "Labor Statistics"}.get(
+            publisher, "Federal Reserve"
+        )
+        assert named in entry.licence.attribution, publisher
     assert "alfred.stlouisfed.org" in entry.endpoint
     json.dumps(entry.options)
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ({"code": "X", "copyright": "ICE"}, "records copyright 'ice'"),
+        ({"code": "X"}, "unchecked"),
+        ({"copyright": "none"}, "has no code"),
+    ],
+)
+def test_a_series_without_a_clean_copyright_record_is_refused(
+    source: Source, entry: dict[str, str], match: str
+) -> None:
+    flagged = source.model_copy(update={"options": {"series": [entry]}})
+    with pytest.raises(ValueError, match=match):
+        alfred.codes(flagged)
+
+
+def test_bare_codes_and_recorded_entries_mix(source: Source) -> None:
+    mixed = source.model_copy(
+        update={"options": {"series": ["GDPC1", {"code": "UNRATE", "copyright": "none"}]}}
+    )
+    assert alfred.codes(mixed) == ["GDPC1", "UNRATE"]
+    assert alfred.codes(mixed, ["UNRATE"]) == ["UNRATE"]

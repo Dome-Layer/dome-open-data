@@ -456,14 +456,24 @@
   expected_staleness_days: 45
   licence:
     # US federal statistics (BEA, BLS, Federal Reserve Board) are public domain. The connector
-    # refuses any series whose ALFRED notes carry a copyright notice.
+    # refuses any series whose ALFRED notes carry a copyright notice. The attribution names every
+    # publisher in `options.series`; adding a series from a new publisher means adding it here.
     name: Public domain (US government work)
     commercial_ok: "yes"
     share_alike: false
-    attribution: "Source: U.S. Bureau of Economic Analysis via ALFRED, Federal Reserve Bank of St. Louis."
+    attribution: "Source: U.S. Bureau of Economic Analysis, U.S. Bureau of Labor Statistics and Board of Governors of the Federal Reserve System, via ALFRED, Federal Reserve Bank of St. Louis."
   options:
     # Caps one run, so a scheduled run that finds a whole new series backfills it over a few
     # days instead of outrunning the job timeout. A dispatched backfill can lift it.
     max_new_per_run: 1500
+    # One entry per series. `copyright` records what ALFRED's own notes said when the series
+    # was added (`none` = no copyright notice, checked on `checked`); the connector re-checks the
+    # notes on every run and refuses the series if a notice ever appears. Headline set picked by
+    # Francesco 2026-11-25.
     series:
-      - GDPC1
+      - { code: GDPC1, publisher: BEA, copyright: none, checked: "2026-11-25" }
+      - { code: PAYEMS, publisher: BLS, copyright: none, checked: "2026-11-25" }
+      - { code: UNRATE, publisher: BLS, copyright: none, checked: "2026-11-25" }
+      - { code: CPIAUCSL, publisher: BLS, copyright: none, checked: "2026-11-25" }
+      - { code: INDPRO, publisher: Federal Reserve Board, copyright: none, checked: "2026-11-25" }
+      - { code: PCEPI, publisher: BEA, copyright: none, checked: "2026-11-25" }

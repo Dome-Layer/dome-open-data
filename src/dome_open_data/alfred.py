@@ -69,8 +69,27 @@ class ArchiveChangedError(RuntimeError):
     """ALFRED served different bytes for a publication date already held."""
 
 
+def _code(source: Source, entry: Any) -> str:
+    """A series is a bare code or a mapping that records its copyright check.
+
+    A mapping must say `copyright: none`: anything else is a recorded notice, and the series is
+    refused here before any request, as the connector would refuse it on reading the notes.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and isinstance(entry.get("code"), str):
+        copyright_ = str(entry.get("copyright", "")).lower()
+        if copyright_ != "none":
+            raise ValueError(
+                f"{source.id}: {entry['code']} records copyright {copyright_ or 'unchecked'!r}; "
+                "only series with no copyright notice are collected"
+            )
+        return str(entry["code"])
+    raise ValueError(f"{source.id}: options.series entry {entry!r} has no code")
+
+
 def codes(source: Source, only: list[str] | None = None) -> list[str]:
-    configured = [str(code) for code in source.options.get("series", [])]
+    configured = [_code(source, entry) for entry in source.options.get("series", [])]
     if not configured:
         raise ValueError(f"{source.id}: options.series is empty")
     if only:

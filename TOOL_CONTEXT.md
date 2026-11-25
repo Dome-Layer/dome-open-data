@@ -182,7 +182,16 @@ Every published version of a US series, from the St. Louis Fed's archive, with n
 - **Proved by a test on real bytes** (`tests/fixtures/alfred/`, the 2007 and 2008 rows of `GDPC1`
   as served for three dates): Q1 2008 annualised growth reads **+0.60%** as published on
   2008-04-30, **-0.72%** after the 2009-07-31 annual revision, and **-1.70%** on 2026-11-25.
-- Series held: `GDPC1` (421 publication dates on 2026-11-25, 1991-12-04 onward).
+- Series held: `GDPC1` (421 publication dates on 2026-11-25, 1991-12-04 onward, in R2 since the
+  dispatched backfill of 2026-11-25, run 45681373015, verified).
+- Headline set (Francesco's pick, 2026-11-25): `GDPC1`, `PAYEMS`, `UNRATE`, `CPIAUCSL`, `INDPRO`,
+  `PCEPI`. Each `options.series` entry records `publisher`, `copyright: none` and the date it was
+  `checked`; `alfred.codes` refuses an entry with any other copyright value or none at all. New
+  dates on 2026-11-25: PAYEMS 861 (from 1955), UNRATE 801 (1960), CPIAUCSL 671 (1972), INDPRO
+  1,226 (1927), PCEPI 318 (2000), 3,877 in all and 2,342,849 rows in a local backfill that
+  verified clean. That is above `max_new_per_run` (1,500), so backfill one series per dispatch.
+  The attribution names all three publishers (BEA, BLS, Federal Reserve Board); a series from a
+  new publisher means widening it.
 
 ### The licence gate (Phase 2A step 2, 2026-11-25)
 
@@ -412,7 +421,10 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
-- **2026-11-25 (Phase 2A steps 1 and 2):** the ALFRED connector (`fred_alfred`, `GDPC1` first,
+- **2026-11-25 (headline series):** `fred_alfred` gains `PAYEMS`, `UNRATE`, `CPIAUCSL`, `INDPRO`
+  and `PCEPI` beside `GDPC1`, each with its copyright check recorded in the registry, and the
+  attribution now names BEA, BLS and the Federal Reserve Board.
+- **2026-11-25 (Phase 2A steps 1 and 2):** the ALFRED connector (#16 `7e74540`; `fred_alfred`, `GDPC1` first,
   daily, new publication dates only, write once with a hash check, conflicts written beside and
   escalated) and the licence gate (`licence.py`: `publish` is the only writer under `public/`,
   values only from `commercial_ok: yes` sources, attribution from the registry). `collect` gained

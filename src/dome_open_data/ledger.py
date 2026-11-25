@@ -15,13 +15,13 @@ sources that have never collected are published as they are. A ledger that showe
 weeks would be marketing, and worthless as the evidence the market test piece claims it is.
 """
 
-import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
-from dome_open_data import catalog, ops
+from dome_open_data import catalog, licence, ops
 from dome_open_data.registry import Source
 from dome_open_data.storage import Storage
 
@@ -168,11 +168,13 @@ async def build(
 
 
 def serialise(ledger: dict[str, Any]) -> bytes:
-    return json.dumps(ledger, ensure_ascii=False, sort_keys=False, indent=1).encode("utf-8")
+    return licence.serialise(ledger)
 
 
-async def write(storage: Storage, ledger: dict[str, Any]) -> int:
-    """Overwrite `public/ledger.json`. It is a snapshot, not a vintage, so it is not create-only."""
-    body = serialise(ledger)
-    await storage.put(LEDGER_KEY, body)
-    return len(body)
+async def write(storage: Storage, ledger: dict[str, Any], sources: Mapping[str, Source]) -> int:
+    """Overwrite `public/ledger.json` through the licence gate.
+
+    The ledger carries no value block today, so the gate passes it; going through it anyway means
+    a value added to the ledger later is checked like any other public value.
+    """
+    return await licence.publish(storage, LEDGER_KEY, ledger, sources)

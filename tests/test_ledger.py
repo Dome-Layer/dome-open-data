@@ -260,7 +260,7 @@ def test_it_is_written_to_one_public_key_and_is_valid_json(storage: Storage) -> 
     sync(catalog.write_run(storage, run()))
     built = build(storage, [source])
 
-    written = sync(ledger.write(storage, built))
+    written = sync(ledger.write(storage, built, {source.id: source}))
     body = sync(storage.get("public/ledger.json"))
 
     assert ledger.LEDGER_KEY == "public/ledger.json"
@@ -274,8 +274,8 @@ def test_writing_it_again_overwrites_rather_than_failing(storage: Storage) -> No
     source = make_source()
     clean_vintage(storage, source, DAY_2)
 
-    sync(ledger.write(storage, build(storage, [source])))
-    sync(ledger.write(storage, build(storage, [source])))
+    sync(ledger.write(storage, build(storage, [source]), {source.id: source}))
+    sync(ledger.write(storage, build(storage, [source]), {source.id: source}))
 
     body = sync(storage.get("public/ledger.json"))
     assert body is not None

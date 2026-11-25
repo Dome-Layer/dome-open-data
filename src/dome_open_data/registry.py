@@ -5,10 +5,16 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Domain = Literal["economy", "trade", "climate", "demographics", "longrun"]
-Connector = Literal["sdmx", "rest", "bulk_file"]
+Connector = Literal["sdmx", "rest", "bulk_file", "alfred"]
 Cadence = Literal["daily", "weekly", "monthly", "yearly"]
 ChangeSignal = Literal[
-    "etag", "last_modified", "sdmx_updated_after", "catalogue_date", "dataset_version", "none"
+    "etag",
+    "last_modified",
+    "sdmx_updated_after",
+    "catalogue_date",
+    "dataset_version",
+    "revision_dates",
+    "none",
 ]
 
 

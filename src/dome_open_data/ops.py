@@ -83,6 +83,9 @@ def should_alert(statuses: Sequence[str], cadence: str, stale: bool) -> AlertDec
     Two things override the grace: a source that is already stale (the data is genuinely missing,
     not merely late), and a cadence slow enough that the next attempt is far away.
     """
+    if statuses and statuses[0] == "conflict":
+        # A publisher changed a version it had already published: never a blip.
+        return AlertDecision(True, "the archive changed a version already held")
     if stale:
         return AlertDecision(True, "the newest vintage is already older than the source allows")
     needed = ALERT_AFTER_FAILURES.get(cadence, 1)

@@ -436,3 +436,34 @@
       capacity_tanker: { title: "Tanker trade volume", unit: "metric tons per day" }
       capacity_cargo: { title: "Cargo trade volume, all cargo types", unit: "metric tons per day" }
       capacity: { title: "Trade volume, all ship types", unit: "metric tons per day" }
+
+- id: fred_alfred
+  name: ALFRED, every published version of US headline series
+  publisher: fred
+  dataset: alfred
+  domain: economy
+  connector: alfred
+  # Keyless routes, verified 2026-11-25 (Phase 2A step 0 spike); see TOOL_CONTEXT.md.
+  endpoint: https://alfred.stlouisfed.org/
+  cadence: daily
+  change_signal: revision_dates
+  # Serial and gentle: parallel requests came back empty about one time in four.
+  rate_limit: { per_second: 2 }
+  auth_secret: null
+  keep_raw: true
+  # The newest publication date across the set; GDPC1 alone goes up to about five weeks
+  # between estimates.
+  expected_staleness_days: 45
+  licence:
+    # US federal statistics (BEA, BLS, Federal Reserve Board) are public domain. The connector
+    # refuses any series whose ALFRED notes carry a copyright notice.
+    name: Public domain (US government work)
+    commercial_ok: "yes"
+    share_alike: false
+    attribution: "Source: U.S. Bureau of Economic Analysis via ALFRED, Federal Reserve Bank of St. Louis."
+  options:
+    # Caps one run, so a scheduled run that finds a whole new series backfills it over a few
+    # days instead of outrunning the job timeout. A dispatched backfill can lift it.
+    max_new_per_run: 1500
+    series:
+      - GDPC1

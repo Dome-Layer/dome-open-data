@@ -172,6 +172,11 @@ async def series_count(storage: Storage, source: Source, vintage: date) -> int |
 
 
 async def vintages(storage: Storage, source: Source) -> list[date]:
+    if source.connector == "alfred":
+        # Dated by the publisher and committed by manifest, not one folder per collection day.
+        from dome_open_data import alfred
+
+        return await alfred.vintages(storage, source)
     found = {
         date.fromisoformat(match[1])
         for key in await storage.list_keys(f"{source.clean_prefix}/")

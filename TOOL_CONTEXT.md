@@ -14,7 +14,7 @@
 - **Tool name:** Dome Open Data
 - **Portfolio position:** Internal parallel track. **Not** a P-numbered tool and not shown on domelayer.com (DOME_DECISIONS 2026-10-19)
 - **DOME phase:** n/a (data foundation; no method phase)
-- **Status:** in development (Sprint OD, Phase 1, session 2 done: 9 registry entries)
+- **Status:** in development (Sprint OD Phase 2A, the Open Data dashboard: step 1, the ALFRED connector, and step 2, the licence gate, landed 2026-11-25; 11 registry entries)
 - **Repo:** https://github.com/Dome-Layer/dome-open-data (public code; data private in R2)
 - **Demo URL:** n/a
 
@@ -86,6 +86,15 @@ catalog/series/source={id}/part-0.parquet                           title, defin
 catalog/runs/source={id}/run=<UTC write time, us>-<suffix>.parquet    one file per run, append only
 public/ledger.json                                                  the ledger page's data (metadata only)
 ```
+ALFRED (`fred_alfred`) is dated by the publisher, so it has its own layout, one folder per series:
+```
+raw/fred/alfred/series=<ID>/vintage=<publication date>/<ID>_<YYYYMMDD>.csv.gz   bytes as received
+raw/fred/alfred/series=<ID>/run=<UTC time>-<suffix>/_manifest.json               commit record of one run
+clean/economy/fred__alfred/series=<ID>/run=<UTC time>-<suffix>/part-0.parquet    rows that run collected
+```
+Read its clean files with `hive_partitioning = false` (the `series=` and `run=` folders would
+otherwise become columns) and only through `alfred.committed_clean_keys`, never a bare glob: see
+"ALFRED" below for why.
 Raw and clean objects are written with a create-only put (`If-None-Match`), so an existing vintage
 can never be overwritten. **Deviation from the brief:** `catalog/` is partitioned per source
 instead of single `sources.parquet` / `series.parquet` / `runs.parquet` files, so the session 3
@@ -127,6 +136,69 @@ Two rules the code enforces, both in `tests/test_ledger.py`:
 
 `run_history_complete_from` is published too, because unchanged runs wrote no row before #12
 (2026-11-16): without it a reader would count the gaps as missed runs.
+
+### ALFRED (`fred_alfred`, Phase 2A step 1, 2026-11-25)
+
+Every published version of a US series, from the St. Louis Fed's archive, with no key. Code in
+`src/dome_open_data/connectors/alfred.py` (requests and parsing) and `alfred.py` (the store).
+
+- **Routes** (verified by the Phase 2A step 0 spike, 2026-11-25): the publication dates come from
+  `alfred.stlouisfed.org/graph/api/series/?id=<ID>&mode=alfred`, at
+  `chart_series[0].series_objects.a.available_revision_dates`; each version from
+  `graph/alfredgraph.csv?id=<ID>&vintage_date=<D>&cosd=&coed=`. The JSON route is undocumented,
+  so `parse_series_info` checks its shape (list present, ascending ISO dates, the series id asked
+  for, a known frequency) and raises `ShapeError` on any change; the documented fallback is FRED
+  API v1 with a key. `fredgraph.csv` on the `fred.` host ignores `vintage_date`.
+- **Requests are serial** (parallel ones came back empty about one time in four), at the
+  registry's 2 a second, with the usual retries, and an empty CSV is asked for again up to four
+  times before the run fails. **The user agent is `http.USER_AGENT`, never a browser one:** Akamai
+  Bot Manager blocks a browser user agent sent by a non-browser client (the 17 November timeouts).
+  Each CSV's header must be `observation_date,<ID>_<YYYYMMDD>` for the date asked, or the run fails.
+- **Two dates per object:** the raw key carries the **publication date**; the run manifest records
+  DOME's **collection time**, the URL, the SHA-256 of the bytes as received, and the row count.
+  The clean `vintage` column is the publication date.
+- **The manifest is the commit.** Raw files, then the clean file, then the manifest, last. A run
+  that dies part way leaves files nothing points at; the next run fetches those dates again and
+  reuses an identical leftover raw file. Readers use `committed_clean_keys`, so a leftover is never
+  read twice. A publication date committed by two manifests fails `verify`.
+- **Write once.** Each run fetches the newest publication date already held again and compares the
+  hash (`--recheck all` does every one, `none` skips it). Same hash: nothing written. **Different
+  hash:** the new bytes go beside the first as `<ID>_<YYYYMMDD>.at=<UTC time>.csv.gz`, the manifest
+  lists it under `conflicts`, the clean zone keeps the first version, and the run ends `conflict`,
+  which `alert-check` always escalates. A held date that ALFRED stops listing is raised the same
+  way.
+- **Daily, new dates only.** `cadence: daily`, so `collect daily` runs it with the other daily
+  sources; a run fetches only publication dates not yet held. `options.max_new_per_run` (1,500)
+  stops a scheduled run that meets a whole new series from outrunning the job timeout: the rest
+  is collected on the following days. A backfill is one dispatch of `collect` with `source:
+  fred_alfred` (optionally `series:`), which has a 60 minute timeout.
+- **Copyright:** a series whose ALFRED notes mention a copyright is refused before any CSV is
+  fetched, because this entry is public domain only (BEA, BLS, Federal Reserve Board).
+- **Units:** levels are in each version's own units (chained 2000 dollars in 2008, 2017 dollars
+  today) and the CSV does not say which, so `unit` is `as_published` and the current units are in
+  the series catalogue. **Compare growth rates across versions, never levels.**
+- **Run rows:** `rows_raw` counts new publication dates, `vintage` is the newest one collected,
+  `change_token` reads like `GDPC1 +421`.
+- **Proved by a test on real bytes** (`tests/fixtures/alfred/`, the 2007 and 2008 rows of `GDPC1`
+  as served for three dates): Q1 2008 annualised growth reads **+0.60%** as published on
+  2008-04-30, **-0.72%** after the 2009-07-31 annual revision, and **-1.70%** on 2026-11-25.
+- Series held: `GDPC1` (421 publication dates on 2026-11-25, 1991-12-04 onward).
+
+### The licence gate (Phase 2A step 2, 2026-11-25)
+
+A source puts **values** in front of the public only if its registry entry has
+`commercial_ok: "yes"` (which is also how a public-domain source is entered); `ask` and `no`
+sources contribute counts and provenance only. `src/dome_open_data/licence.py`:
+
+- **`publish` is the only writer under `public/`.** It runs `check_public` and refuses the write on
+  any failure; the ledger goes through it too. A test fails if another module writes a `public/`
+  key.
+- In a public payload values travel only in a **value block**, a mapping with a `value` or `values`
+  key, however deep. Each must name a registry `source_id` whose licence allows values, and carry
+  that source's registry `attribution` character for character. `value_block` builds one with the
+  attribution from the registry, so the app never types it.
+- `tests/test_licence.py` puts a value from each `ask` source (the three IMF ones today) into a
+  dashboard-shaped payload and asserts the write is refused and nothing reaches the store.
 
 ### Common time-series model
 `series_id · geo (ISO alpha-3) · period (start date) · freq · value · unit · obs_status · vintage`.
@@ -233,6 +305,7 @@ sources again on **2026-10-21** (session 2 Step 0, then a full local collection 
 | UN WPP 2024 (`un_wpp`) | bulk_file (`wpp`) | `https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz` (16.6 MB, gzip magic checked) | ETag (`"0x8DD1BA9EBFD1565"`, 2024-12-13) | The `population.un.org/wpp/downloads` page is **404**. 21 curated indicators; location types Country/Area, World, Geographic region, Subregion (aggregates become `UN<LocID>`, e.g. `UN900` World). 1950 to 2100: 2024 onward is `projection`. 843,486 rows |
 | PWT 11.0 (`ggdc_pwt`) | bulk_file (`pwt`) | dataverse.nl API `api/datasets/:persistentId/?persistentId=doi:10.34894/FABVLR`, file `pwt110.xlsx` (id 554105) via `api/access/datafile/{id}` | Dataverse version (2.0) + file id + checksum | Downloads redirect to SURF object storage (`objectstore.surf.nl`). **No Anubis challenge on 2026-10-21**, from a home connection; the xlsx magic check turns any HTML answer into a failed run, never a workaround. Titles and units from the file's Legend sheet; `i_*` flags and `cor_exp` excluded. 416,285 rows |
 | IMF PortWatch chokepoints (`imf_portwatch`) | bulk_file (`arcgis_hub`) | Change signal from `editingInfo.lastEditDate` on the FeatureServer layer; file from the Hub CSV export `hub.arcgis.com/api/download/v1/items/3da2b9ca97684916b75c4013f95d18ab/csv?layers=0` | `editingInfo.lastEditDate` (1793715201792 on 2026-11-06) + the options hash | 28 chokepoints x 14 measures x every day since 2019-01-01, about 1.1 M observations a vintage, so **weekly** even though the data is daily (it also runs about ten days behind). `geo` holds the chokepoint id (`chokepoint1`), not a country; the name is in the series title. Counts are transit calls (one ship per 48 h); `capacity_*` are estimated trade volumes in metric tons (IMF WP/2021/225), not maximum capacity. **The quota is the constraint, see the Step 0 section above**, and on 2026-11-06 the Hub export itself was failing to regenerate | IMF terms, `commercial_ok: ask` |
+| ALFRED (`fred_alfred`) | alfred | `https://alfred.stlouisfed.org/`: dates `graph/api/series/?id=<ID>&mode=alfred`, versions `graph/alfredgraph.csv?id=<ID>&vintage_date=<D>&cosd=&coed=` (verified 2026-11-25) | The publication date list itself | No key. Akamai blocks a browser user agent from a non-browser client; parallel requests can come back empty. One CSV per publication date. See "ALFRED" above. Public domain (US federal series only, copyright notes refused) |
 | Maddison 2023 (`ggdc_maddison`) | bulk_file (`maddison`) | Same API, `doi:10.34894/INZBF2`, file `mpd2023_web.xlsx` (id 421302) | Dataverse version (1.0) + file id + checksum | Sheet `Full data`, years from 1 AD to 2022 (period `0001-01-01` is valid). Historical codes `CSK`, `SUN`, `YUG`; `SDN` is former Sudan. When fewer than 12 countries are shown, the original papers must be cited (in the attribution). 39,241 rows |
 
 ### Session 3 Step 0: IMF PortWatch chokepoints (verified 2026-11-06)
@@ -339,6 +412,12 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
+- **2026-11-25 (Phase 2A steps 1 and 2):** the ALFRED connector (`fred_alfred`, `GDPC1` first,
+  daily, new publication dates only, write once with a hash check, conflicts written beside and
+  escalated) and the licence gate (`licence.py`: `publish` is the only writer under `public/`,
+  values only from `commercial_ok: yes` sources, attribution from the registry). `collect` gained
+  `series` and `recheck` inputs and a 60 minute timeout for backfills. A test reproduces the 2008
+  revision story from real bytes.
 - **2026-11-16 (alerting rule, #12 `7e96c3b`):** an issue now means "something is broken", not "a
   publisher had a bad minute". After a failed run, `alert-check` reads the source's own run history:
   a daily source is given one failure (its next attempt is hours away), slower cadences none, and a

@@ -1,6 +1,7 @@
 # Source of truth: dome-docs/templates/ci-python.yml (adapted for dome-open-data).
-# Root layout (no backend/), no frontend or docker job, no dummy LLM keys: the
-# pipeline has no LLM and ships no image (DOME_DECISIONS 2026-10-19).
+# Root layout (no backend/), no frontend or docker job, no dummy LLM keys: the one
+# model call (the insights writer, Phase 2A step 3) is mocked in every test, and the
+# pipeline ships no image (DOME_DECISIONS 2026-10-19).
 
 name: ci
 

@@ -60,11 +60,17 @@ Francesco, for now. Who else it serves is decided at Gate 3 (monetisation direct
 - **Frontend:** none
 - **Backend:** Python 3.12 package `dome_open_data` (`src/` layout, run with `PYTHONPATH=src`), run by GitHub Actions; no server
 - **Database:** none. Cloudflare R2 bucket `dome-open-data` (private, r2.dev URL off, no custom domain) holding Parquet; DuckDB as the query engine
-- **Key libraries:** `httpx` (async HTTP), `obstore` (async object storage: R2 via S3, local, memory), `pyarrow` (Parquet), `duckdb` (verify and query), `pydantic` (registry schema), `pyyaml`
+- **Key libraries:** `httpx` (async HTTP), `obstore` (async object storage: R2 via S3, local, memory), `pyarrow` (Parquet), `duckdb` (verify and query), `pydantic` (registry schema), `pyyaml`, `anthropic` (the insights writer only)
 - **Hosting:** GitHub-hosted runners (free on a public repo); R2 free tier (10 GB, no egress fees)
 
 ### LLM usage
-None. The DOME LLM abstraction (DA-004) does not apply.
+One call per collection, in the insights stage (Phase 2A step 3, below): Claude words a shortlist
+of findings the code has already measured, and code then proves every figure it wrote. Model and
+effort come from `insights.yaml` (`claude-opus-5-5`, effort `medium`, server-side fallback
+`default` on a refusal), through the Anthropic SDK with structured output (JSON schema). The model
+never reads the store and never does arithmetic. The DOME LLM abstraction (DA-004, in `dome-core`)
+is not used: this repo does not depend on `dome-core`, the call is a single batch request with no
+user input, and the checker, not the abstraction, is what makes it safe.
 
 ### Data handling
 - **What data enters the tool:** published open statistics only. No user data, no personal data.
@@ -212,6 +218,71 @@ sources contribute counts and provenance only. `src/dome_open_data/licence.py`:
 - `tests/test_licence.py` puts a value from each `ask` source (the three IMF ones today) into a
   dashboard-shaped payload and asserts the write is refused and nothing reaches the store.
 
+### Insights and the dashboard (`public/dashboard.json`, Phase 2A step 3, 2026-11-26)
+
+`python -m dome_open_data dashboard` runs after each collection (the `dashboard` job in
+`collect-cadence.yml`, beside `ledger`, `always()`), in three stages under
+`src/dome_open_data/insights/`:
+
+1. **Scan** (`scan.py`, code only). Five detectors over the newest vintage of each configured
+   source: `move` (largest move in a family over a window: the ECB currencies over 35 days, the
+   Pink Sheet over a year), `record` (the most extreme of the newest observations, if nothing as
+   extreme for 180 days; an extreme of everything held is not claimed, because the store's start is
+   not the series' start), `jump` (a step at least 3 times the series' 99th percentile step over two
+   years), `revision` (largest revision between the two newest ALFRED publications, in the measure
+   a reader knows: annualised growth for GDP, monthly growth for prices and production, the change
+   for payrolls, the level for unemployment) and `lead_lag` (configured pairs only: a monthly
+   leader move of 25% or more, then the follower's first change after a hold of 180 days or more;
+   never mined, always worded as a pattern, with a caveat added by code). Each candidate carries its
+   figures, each figure a **recipe** (`calc`) over named observations, and the exact objects read
+   with their SHA-256. Ranking: a per-detector score, discounted by age (14 and 60 day steps; the
+   pattern is not discounted), a record in a `prominent` series counts double, one candidate per
+   group (the euro falling against twenty currencies is one story), never the same series twice,
+   at most 2 per detector, 6 in all.
+2. **Write** (`write.py`). The shortlist JSON goes to the model: per candidate an id, tag, subject,
+   a finding written by code and each figure's meaning and display string. No series, no keys.
+   Structured output returns tag, headline, body and the figure ids used. A finding whose id and
+   figures are unchanged since the last dashboard keeps its checked text and is not sent again, so a
+   quiet day costs nothing.
+3. **Check** (`check.py`). (a) Every object the candidate read is read again by a `Reader` of the
+   checker's own and must hash the same; every figure's recipe is evaluated again with arithmetic
+   written separately from the detectors, and must agree. (b) Every number, date, month, quarter,
+   year and number word in headline and body must match a figure at the precision shown (sign
+   included; a whole number may round a figure only for a percentage or a figure of 100 or more, so
+   "six" is never 5.6339). Also refused: a claimed cause ("because", "due to", "drove" and so on),
+   an em or en dash, an empty or overlong text, a text with no figure. **One problem and the
+   insight is dropped**; it is listed under `dropped` (id, tag, "figures checked: n of m", never its
+   text) and logged with the reasons. What passes is published with "figures checked: n of n" and
+   its evidence (reads, figures as value blocks per source, which text matched which figure).
+
+The object also holds the four key figures with sparklines (`insights.yaml`, `key_figures`; the
+deposit rate as its month-end level), the flagship panel (`GDPC1`'s four 2008 quarters as
+annualised growth by publication date, 222 publications each on 2026-11-26), the ledger's store
+totals and stale lists, every run of the last 14 days, and the attribution of each source used.
+All values are value blocks through `licence.publish`; `data.py` refuses to load an `ask` source
+at all, and `insights.yaml` is refused if it names one.
+
+**The canvas, checked.** On the fixture cut of 2026-11-24 the three canvas insights reproduce
+exactly (`tests/test_insights.py`): EUR/BRL 5.6339 to 6.4349, +14.2%, with +10.7% between the
+fixes of 23 and 26 October; Brent $71.1 to $103.7 from February to March 2026, then the deposit
+rate, 2.00% since 11 June 2025, to 2.25% on 17 June and 2.50% on 16 September; EUR/USD 1.0939 on
+23 November 2026, the lowest since 2 April 2025. **The canvas headline "the biggest mover of 44
+currencies" is refused**: the store holds 44 ECB currencies but 15 are no longer fixed, so the
+move is the largest of 29, and the test asserts the 44 is dropped.
+
+**First real call (local, `--print`, 2026-11-26):** 6 shortlisted, 6 written by
+`claude-opus-5-5`, 6 published, 0 dropped; 4,885 input and 1,752 output tokens, about $0.06;
+106 KiB of JSON.
+
+**Governance events.** Each published or dropped insight leaves one row in the canonical
+`governance_events` shape (agent `open-data`, `insight_published` or `insight_dropped`,
+`input_hash` of the candidate as sent, the problems as `rules_triggered`, checked over total as
+`confidence`, the Actions run id as `workflow_run_id`), written as one JSON object per run under
+`catalog/governance/agent=open-data/` in the private bucket. They do **not** reach the production
+`governance_events` table: that needs the Supabase secret key as a secret of this public
+repository, for rows nobody could read in gov-dash (they have no `user_id`, and P6 shows only the
+reader's own events). Open question below.
+
 ### Common time-series model
 `series_id · geo (ISO alpha-3) · period (start date) · freq · value · unit · obs_status · vintage`.
 `series_id` is `{publisher}.{dataset}.{code}.{geo}.{freq}`, for example
@@ -227,7 +298,9 @@ Non-time-series sources (filings, tenders, events, boundaries) keep their own sh
 ## Governance
 
 ### Events emitted
-None. The pipeline does not write `GovernanceEvent` rows: no AI decision, no user action.
+The insights stage writes one `governance_events`-shaped row per published or dropped insight
+(agent `open-data`), to `catalog/governance/agent=open-data/` in the bucket, not to Supabase (see
+"Insights and the dashboard"). Collection itself writes none: no AI decision, no user action.
 
 ### Rules applied
 - **Licence gate:** a registry entry without `licence.name`, `commercial_ok`, `share_alike` and `attribution` is refused.
@@ -235,6 +308,8 @@ None. The pipeline does not write `GovernanceEvent` rows: no AI decision, no use
 - **Response guard:** a source that answers with anything but what it should (JSON, SDMX-CSV, or an xlsx/gzip file checked by its leading bytes), for example a 200 HTML bot challenge, fails the run before anything is stored. Challenges are never worked around.
 - **Freshness rule:** a source older than its `expected_staleness_days` raises an issue. *(Session 3.)*
 - **Storage rule:** bucket size ≥ 8 GB raises an issue. *(Session 3.)*
+- **Insight check:** every figure recomputed from the store, every number in the text matched to a
+  figure, no claimed cause, no dash; one problem drops the insight (Phase 2A step 3).
 
 ### Verification
 `python -m dome_open_data verify <id>` reads the newest vintage's manifest, re-reads every raw file
@@ -270,6 +345,8 @@ n/a.
 - `R2_ACCESS_KEY_ID`: R2 token, Object Read & Write scoped to the bucket (secret)
 - `R2_SECRET_ACCESS_KEY`: secret
 - `R2_BUCKET`: `dome-open-data` (repository variable)
+- `ANTHROPIC_API_KEY`: the insights writer, scoped to `dome-open-data` (secret, set 2026-11-25).
+  Only the `dashboard` job receives it.
 - Phase 2+: `FRED_API_KEY`, `COMTRADE_API_KEY`, `EIA_API_KEY`, `OPENAQ_API_KEY`, `CDS_API_KEY` (secrets, added when the source is)
 
 In Actions these are **repository** secrets and a repository variable, not environment or
@@ -277,6 +354,8 @@ organisation ones: nothing deploys, and an environment with reviewers would stal
 
 ### Config files
 - `sources.yaml`: the source registry
+- `insights.yaml`: the insights stage: writer model and effort, shortlist size, families,
+  thresholds, the lead and lag pairs, the `prominent` series, key figures, the flagship
 - `crosswalk/countries.csv`, `crosswalk/aggregates.csv`: country and aggregate codes, generated by
   `python -m dome_open_data crosswalk` from the UN WPP location list, the World Bank country API
   and the IMF codes WEO and ER use, plus the hand-kept `crosswalk/manual.csv` (Kosovo, the
@@ -393,6 +472,9 @@ schedules; `collect.yml` stays for collecting one source on demand.
 - `catalog/runs/` gains one small file per run, including runs that found nothing new (one row per
   run, as the sprint brief asks, and what the alert rule counts). About 3,700 small objects a year
   at the current cadences; compact it if that ever matters.
+- Insights: an all-time record is never claimed (the store's first vintage is not the series'
+  first observation); the `lead_lag` pairs are chosen by hand in `insights.yaml`; the ranking is a
+  judgment written down in that file (scores, freshness steps, `prominent`), not a model's.
 - `imf_portwatch` depends on ArcGIS Hub regenerating its CSV export. That is outside this
   pipeline's control, and it was broken when the source was added (see Open questions).
 
@@ -418,11 +500,25 @@ schedules; `collect.yml` stays for collecting one source on demand.
   perform query. Too many requests." four times, having been stuck since 2026-11-03. The weekly
   job therefore fails cleanly and opens one issue until the Hub recovers. If it never does, the
   options are paging the service with heavy backoff or dropping the source.
+- **Governance events to production (Phase 2A step 3):** forward the `open-data` rows from
+  `catalog/governance/` to the production `governance_events` table? It needs the Supabase secret
+  key as a secret of this public repository (Francesco's call), and the rows would carry no
+  `user_id`, so gov-dash would not show them to anyone. Recommended: not now; if a public view of
+  them is wanted, the dashboard can read them from the bucket instead.
 - Gate 3: monetisation direction, licence recheck, and whether this appears on domelayer.com.
 
 ---
 
 ## Changelog
+
+- **2026-11-26 (Phase 2A step 3, insights):** `python -m dome_open_data dashboard` and the
+  `dashboard` job in `collect-cadence.yml`: scan (five detectors), write (Claude, structured
+  output, shortlist only, kept text reused), check (recompute every figure, match every number;
+  one problem drops the insight), then `public/dashboard.json` through the licence gate and one
+  governance row per insight under `catalog/governance/`. `insights.yaml` holds the knobs. Tests
+  on a real fixture cut (`tests/fixtures/store/`, ECB and World Bank, both reuse-allowed)
+  reproduce the three canvas insights and refuse the canvas's "44 currencies". First local call:
+  6 of 6 published, about $0.06.
 
 - **2026-11-26 (404 retry):** a 404 for a publication date ALFRED lists is retried like a 5xx,
   after the first INDPRO backfill (run 45702315509) died on one; the re-run went clean and all six

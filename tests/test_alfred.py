@@ -22,7 +22,7 @@ from dome_open_data.connectors.alfred import (
     parse_series_info,
     series_id,
 )
-from dome_open_data.http import USER_AGENT, SourceError, new_client
+from dome_open_data.http import USER_AGENT, RateLimiter, SourceError, get, new_client
 from dome_open_data.registry import Source, load_registry
 from dome_open_data.storage import Storage
 from dome_open_data.validate import ValidationError
@@ -86,6 +86,7 @@ class FakeAlfred:
         self.dates = list(dates)
         self.csv: dict[date, bytes] = {d: fixture_csv(d) for d in dates}
         self.empty_first: dict[date, int] = {}
+        self.missing_first: dict[date, int] = {}
         self.info_override: dict[str, Any] = {}
         self.payload: Any = None
         self.requests: list[httpx.Request] = []
@@ -115,6 +116,9 @@ class FakeAlfred:
             return httpx.Response(200, json=body)
         if path == "/graph/alfredgraph.csv":
             published = date.fromisoformat(request.url.params["vintage_date"])
+            if self.missing_first.get(published, 0) > 0:
+                self.missing_first[published] -= 1
+                return httpx.Response(404)
             if self.empty_first.get(published, 0) > 0:
                 self.empty_first[published] -= 1
                 return httpx.Response(200, content=b"", headers={"content-type": "application/csv"})
@@ -285,6 +289,46 @@ def test_an_empty_csv_is_asked_for_again(source: Source, storage: Storage) -> No
     result = collect(source, storage, fake)
 
     assert result.new == 3
+
+
+def test_a_404_for_a_listed_date_is_asked_for_again(source: Source, storage: Storage) -> None:
+    """INDPRO at 2009-09-16 answered 404 once on 2026-11-25, then 200 with the same bytes."""
+    fake = FakeAlfred(DATES)
+    fake.missing_first[REVISED_2009] = 3
+
+    result = collect(source, storage, fake)
+
+    assert result.new == 3
+    assert fake.csv_requests().count(REVISED_2009) == 4
+    assert statuses(storage, source) == ["collected"]
+
+
+def test_a_404_that_lasts_still_fails_the_run(source: Source, storage: Storage) -> None:
+    fake = FakeAlfred(DATES)
+    fake.missing_first[REVISED_2009] = 10**6
+
+    with pytest.raises(SourceError, match="status 404"):
+        collect(source, storage, fake)
+    assert statuses(storage, source) == ["failed"]
+    assert sync(catalog.vintages(storage, source)) == []
+
+
+def test_a_404_on_another_route_is_not_retried() -> None:
+    """Only the vintage fetch widens the retry set; everything else keeps 404 as final."""
+    calls = 0
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404)
+
+    async def go() -> None:
+        async with new_client(httpx.MockTransport(handle)) as client:
+            await get(client, "https://example.org/x", RateLimiter(100))
+
+    with pytest.raises(SourceError, match="returned 404"):
+        sync(go())
+    assert calls == 1
 
 
 def test_an_empty_csv_every_time_fails_the_run(source: Source, storage: Storage) -> None:

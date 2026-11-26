@@ -53,6 +53,7 @@ async def get(
     backoff: float = 2.0,
     headers: dict[str, str] | None = None,
     method: str = "GET",
+    retry_statuses: frozenset[int] | set[int] = RETRY_STATUSES,
 ) -> httpx.Response:
     for attempt in range(1, attempts + 1):
         await limiter.wait()
@@ -61,7 +62,7 @@ async def get(
         except httpx.TransportError as exc:
             reason = f"{type(exc).__name__}: {exc}"
         else:
-            if response.status_code not in RETRY_STATUSES:
+            if response.status_code not in retry_statuses:
                 if response.is_error:
                     raise SourceError(f"{method} {response.url} returned {response.status_code}")
                 return response

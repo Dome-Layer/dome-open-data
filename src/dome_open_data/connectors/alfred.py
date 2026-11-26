@@ -25,7 +25,14 @@ from typing import Any
 
 import httpx
 
-from dome_open_data.http import RateLimiter, SourceError, get, require_csv, require_json
+from dome_open_data.http import (
+    RETRY_STATUSES,
+    RateLimiter,
+    SourceError,
+    get,
+    require_csv,
+    require_json,
+)
 from dome_open_data.model import Observation
 
 DATES_PATH = "graph/api/series/"
@@ -130,6 +137,12 @@ def check_csv(data: bytes, code: str, published: date) -> int:
     return sum(1 for row in rows[1:] if row)
 
 
+# The date asked for comes from ALFRED's own list, so a 404 for it is a blip, not a missing
+# version: on 2026-11-25 INDPRO at 2009-09-16 answered 404 once and 200, with the same bytes, a
+# few minutes later. It is retried with the usual backoff; a 404 that lasts still fails the run.
+LISTED_DATE_RETRY = frozenset(RETRY_STATUSES | {404})
+
+
 async def fetch_vintage(
     client: httpx.AsyncClient,
     endpoint: str,
@@ -137,7 +150,7 @@ async def fetch_vintage(
     published: date,
     limiter: RateLimiter,
 ) -> tuple[bytes, str]:
-    """One vintage CSV, asked for again while it comes back empty."""
+    """One vintage CSV, asked for again while it comes back empty or answers 404."""
     url = f"{endpoint}{CSV_PATH}"
     params = {
         "id": code,
@@ -146,7 +159,7 @@ async def fetch_vintage(
         "coed": "",
     }
     for _attempt in range(EMPTY_ATTEMPTS):
-        response = await get(client, url, limiter, params)
+        response = await get(client, url, limiter, params, retry_statuses=LISTED_DATE_RETRY)
         require_csv(response)
         # The bytes as received: they are what the SHA-256 in the manifest proves.
         data = response.content

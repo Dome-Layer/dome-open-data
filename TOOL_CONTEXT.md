@@ -151,7 +151,10 @@ Every published version of a US series, from the St. Louis Fed's archive, with n
   API v1 with a key. `fredgraph.csv` on the `fred.` host ignores `vintage_date`.
 - **Requests are serial** (parallel ones came back empty about one time in four), at the
   registry's 2 a second, with the usual retries, and an empty CSV is asked for again up to four
-  times before the run fails. **The user agent is `http.USER_AGENT`, never a browser one:** Akamai
+  times before the run fails. **A 404 for a version is retried too** (`LISTED_DATE_RETRY`), with
+  the usual backoff, because the date comes from ALFRED's own list: on 2026-11-25 INDPRO at
+  2009-09-16 answered 404 once and 200 with the same bytes minutes later. Every other route keeps a
+  404 as final. **The user agent is `http.USER_AGENT`, never a browser one:** Akamai
   Bot Manager blocks a browser user agent sent by a non-browser client (the 17 November timeouts).
   Each CSV's header must be `observation_date,<ID>_<YYYYMMDD>` for the date asked, or the run fails.
 - **Two dates per object:** the raw key carries the **publication date**; the run manifest records
@@ -421,6 +424,9 @@ schedules; `collect.yml` stays for collecting one source on demand.
 
 ## Changelog
 
+- **2026-11-26 (404 retry):** a 404 for a publication date ALFRED lists is retried like a 5xx,
+  after the first INDPRO backfill (run 45702315509) died on one; the re-run went clean and all six
+  series are verified in R2 (4,298 dates, 2,445,586 rows).
 - **2026-11-25 (headline series):** `fred_alfred` gains `PAYEMS`, `UNRATE`, `CPIAUCSL`, `INDPRO`
   and `PCEPI` beside `GDPC1`, each with its copyright check recorded in the registry, and the
   attribution now names BEA, BLS and the Federal Reserve Board.

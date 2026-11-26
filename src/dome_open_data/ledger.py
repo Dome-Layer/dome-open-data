@@ -167,6 +167,22 @@ async def build(
     }
 
 
+async def run_history(
+    storage: Storage, sources: list[Source], since: date, per_source: int = 40
+) -> list[dict[str, Any]]:
+    """Every run of every source started on or after `since`, newest first, for the dashboard's
+    "last 14 days" rail. Failures are in it like everything else."""
+    history: list[dict[str, Any]] = []
+    for source in sources:
+        for row in await catalog.recent_runs(storage, source.id, limit=per_source):
+            started = row.get("started_at")
+            if isinstance(started, datetime):
+                moment = started if started.tzinfo else started.replace(tzinfo=UTC)
+                if moment.date() >= since:
+                    history.append({"source_id": source.id, **_run_entry(row)})
+    return sorted(history, key=lambda r: (r["started_at"] or "", r["source_id"]), reverse=True)
+
+
 def serialise(ledger: dict[str, Any]) -> bytes:
     return licence.serialise(ledger)
 

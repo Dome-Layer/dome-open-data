@@ -6,7 +6,7 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from dome_open_data import alfred, catalog, ledger, logs, ops
+from dome_open_data import alfred, catalog, dashboard, ledger, logs, ops
 from dome_open_data.config import load_env_file
 from dome_open_data.http import new_client
 from dome_open_data.registry import Source, load_registry
@@ -127,6 +127,41 @@ async def _ledger(args: argparse.Namespace) -> None:
     )
 
 
+async def _dashboard(args: argparse.Namespace) -> None:
+    """Scan, write, check, then publish `public/dashboard.json` (Phase 2A step 3).
+
+    Called after `ledger` at the end of the collect workflows. The dashboard is written even when
+    the writer fails, with the insights it could keep; the command then exits non-zero.
+    """
+    from dome_open_data.insights import config as insights_config
+
+    storage = _storage(args)
+    registry = load_registry(Path(args.registry))
+    config = insights_config.load(Path(args.config), registry)
+    at = datetime.now(UTC)
+    built, outcome = await dashboard.build(
+        storage, registry, config, at, use_model=not args.no_model
+    )
+    if args.print:
+        print(ledger.serialise(built).decode("utf-8"))
+    else:
+        written = await dashboard.publish(storage, built, registry)
+        events = await dashboard.write_events(storage, outcome, at)
+        print(f"{dashboard.DASHBOARD_KEY}: {written:,} bytes; governance events: {events}")
+    print(
+        f"insights: {outcome.shortlisted} shortlisted, {outcome.kept} kept, "
+        f"{outcome.written} written by {outcome.model or 'no model'} "
+        f"({outcome.input_tokens} in, {outcome.output_tokens} out), "
+        f"{outcome.published} published, {outcome.dropped} dropped"
+    )
+    for item in built["insights"]:
+        print(f"  {item['tag']}: {item['headline']} [{item['figures_checked']}]")
+    for item in built["dropped"]:
+        print(f"  dropped {item['id']} [{item['figures_checked']}]")
+    if outcome.writer_error:
+        raise RuntimeError(f"the writer failed: {outcome.writer_error}")
+
+
 async def _verify(args: argparse.Namespace) -> None:
     source = _source(args)
     if source.connector == "alfred":
@@ -186,6 +221,16 @@ def main(argv: list[str] | None = None) -> int:
         "--print", action="store_true", help="print the JSON instead of writing it to the store"
     )
 
+    dash = commands.add_parser(
+        "dashboard", help="scan, write and check insights, then publish public/dashboard.json"
+    )
+    dash.add_argument("--config", default="insights.yaml")
+    dash.add_argument("--local-dir", help="read and write a local folder instead of R2")
+    dash.add_argument(
+        "--print", action="store_true", help="print the JSON instead of writing it to the store"
+    )
+    dash.add_argument("--no-model", action="store_true", help="publish without calling the writer")
+
     verify = commands.add_parser("verify", help="recount a vintage from raw and via DuckDB")
     verify.add_argument("source")
     verify.add_argument("--vintage", help="YYYY-MM-DD, default the newest")
@@ -215,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         "usage": _usage,
         "alert-check": _alert_check,
         "ledger": _ledger,
+        "dashboard": _dashboard,
     }
     try:
         asyncio.run(commands_run[args.command](args))

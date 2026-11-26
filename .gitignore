@@ -11,6 +11,9 @@ data/
 !crosswalk/*.csv
 # ...and test fixtures: a few public-domain rows (ALFRED GDPC1, BEA), so the tests run offline
 !tests/fixtures/**/*.csv
+# ...and the insights fixture store: a cut of ECB and World Bank data, both reuse-allowed with
+# attribution (tests/fixtures/store/README.md). Never an `ask` source.
+!tests/fixtures/store/**/*.parquet
 *.zip
 *.xlsx
 *.gz

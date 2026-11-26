@@ -156,3 +156,36 @@ jobs:
         run: pip install -r requirements.txt
       - name: Publish the ledger
         run: python -m dome_open_data ledger
+
+  # The Open Data dashboard (Phase 2A step 3): scan the clean zone, have Claude word the
+  # shortlist, check every figure against the store, then publish `public/dashboard.json`.
+  # Wired like the ledger, once per workflow run and `always()`, for the same reason: a failed
+  # source must show on the dashboard too. The writer is called only for findings whose text
+  # cannot be kept from the last dashboard, so a quiet day costs nothing.
+  #
+  # A red job here means the dashboard was still published but without fresh text (the writer
+  # failed) or not at all; the insights that were dropped by the check are not a failure, they
+  # are the check working, and are listed in the object and the log.
+  dashboard:
+    needs: [plan, collect]
+    if: always() && needs.plan.outputs.sources != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Publish the dashboard
+        run: python -m dome_open_data dashboard

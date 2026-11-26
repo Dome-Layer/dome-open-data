@@ -1,0 +1,95 @@
+# The insights stage: what the scan looks at, which model writes, and what the dashboard shows.
+#
+# Everything a reader sees on the dashboard is decided here or computed from the store. The
+# model only words a shortlist of candidates the code has already found and measured; the checker
+# then proves every number it wrote against the data (TOOL_CONTEXT.md, "Insights").
+#
+# Only sources whose licence allows values (`commercial_ok: "yes"`) may appear below: the
+# loader refuses any other, and the licence gate refuses the write if one slips through.
+
+writer:
+  # The model id is configuration, never code. Opus 5.5 by default; cost is one request per
+  # collection, on the shortlist only, and none at all when the shortlist has not changed.
+  model: claude-opus-5-5
+  effort: medium
+  max_tokens: 16000
+  # Server-side fallback on a refusal (beta), so a declined request is retried on Anthropic's
+  # recommended model instead of leaving the dashboard without text.
+  fallbacks: default
+
+shortlist:
+  size: 6
+  per_detector: 2
+
+# Largest move in a family over a window: every series of the source that is still quoted.
+families:
+  - id: ecb_currencies
+    source_id: ecb_fx
+    label: currencies against the euro
+    window_days: 35
+  - id: world_bank_commodities
+    source_id: worldbank_pinksheet
+    label: commodity prices
+    window_days: 366
+
+# Series a general reader knows by name, best known first: a record in one of these counts double
+# in the ranking, and a tie goes to the one listed first. Editorial, and written down here so it is not hidden in code.
+prominent:
+  - ecb.fx.USD.EUR.SP00.A.EMU.D
+  - ecb.fx.GBP.EUR.SP00.A.EMU.D
+  - ecb.fx.JPY.EUR.SP00.A.EMU.D
+  - worldbank.pinksheet.CRUDE_OIL_BRENT.WLD.M
+  - worldbank.pinksheet.NATURAL_GAS_EUROPE.WLD.M
+  - worldbank.pinksheet.GOLD.WLD.M
+
+# Records and jumps are looked for in the same series as the families.
+records:
+  # A new high or low counts only if the previous observation as extreme is at least this old.
+  min_days: 180
+  # ... and only if it happened in the newest few observations, by frequency: a daily series
+  # gets a week, a monthly one only its latest month.
+  recent_observations: { D: 5, M: 1, Q: 1 }
+jumps:
+  # A step this many times the series' usual largest step (its 99th percentile) is "far
+  # outside its own range". The history is the two years before the window.
+  ratio: 3.0
+  history_days: 730
+  recent_observations: { D: 10, M: 2, Q: 1 }
+
+# Revisions between the two newest ALFRED publications of each series, in the measure a reader
+# knows the series by. `threshold` is the size worth telling anyone about.
+revisions:
+  source_id: fred_alfred
+  recent_periods: 8
+  series:
+    - { code: GDPC1, measure: annualised_growth, threshold: 0.3, label: US real GDP }
+    - { code: PAYEMS, measure: change, threshold: 50, label: US payrolls }
+    - { code: UNRATE, measure: level, threshold: 0.1, label: US unemployment rate }
+    - { code: CPIAUCSL, measure: monthly_growth, threshold: 0.1, label: US consumer prices }
+    - { code: INDPRO, measure: monthly_growth, threshold: 0.3, label: US industrial production }
+    - { code: PCEPI, measure: monthly_growth, threshold: 0.1, label: US PCE prices }
+
+# Lead and lag: a large monthly move in the leader, then the follower's first change after a
+# long hold. Pairs are chosen here, never mined, and always worded as a pattern.
+lead_lag:
+  - id: energy_then_ecb
+    leaders:
+      - { source_id: worldbank_pinksheet, series_id: worldbank.pinksheet.CRUDE_OIL_BRENT.WLD.M }
+      - { source_id: worldbank_pinksheet, series_id: worldbank.pinksheet.NATURAL_GAS_EUROPE.WLD.M }
+    follower: { source_id: ecb_policy_rates, series_id: ecb.policy_rates.DFR.LEV.EMU.D }
+    min_move_pct: 25
+    min_hold_days: 180
+    max_lag_months: 6
+
+# The four key figures at the top of the dashboard, with their sparklines.
+key_figures:
+  - { label: Euro in US dollars, source_id: ecb_fx, series_id: ecb.fx.USD.EUR.SP00.A.EMU.D, points: 26, decimals: 4 }
+  - { label: ECB deposit rate, source_id: ecb_policy_rates, series_id: ecb.policy_rates.DFR.LEV.EMU.D, points: 13, decimals: 2, step: monthly }
+  - { label: "Brent crude, $ a barrel", source_id: worldbank_pinksheet, series_id: worldbank.pinksheet.CRUDE_OIL_BRENT.WLD.M, points: 13, decimals: 1 }
+  - { label: "European gas, $ per mmbtu", source_id: worldbank_pinksheet, series_id: worldbank.pinksheet.NATURAL_GAS_EUROPE.WLD.M, points: 13, decimals: 2 }
+
+# The flagship panel: how each quarter of 2008 was first published and then revised.
+flagship:
+  source_id: fred_alfred
+  code: GDPC1
+  quarters: ["2008-01-01", "2008-04-01", "2008-07-01", "2008-10-01"]
